@@ -3,7 +3,7 @@
 COMPOSE ?= docker compose
 UV      ?= uv
 
-.PHONY: up down logs migrate revision test test-integration lint fmt seed shell psql clean
+.PHONY: up down logs migrate revision test test-integration lint fmt seed load mgrs-grid shell psql clean
 
 up:            ## Build and start the full local stack
 	$(COMPOSE) up -d --build
@@ -32,8 +32,14 @@ lint:          ## ruff + mypy (local, via uv)
 fmt:           ## Auto-format with ruff
 	cd backend && $(UV) run ruff format . && $(UV) run ruff check --fix .
 
-seed:          ## Load seed data (registered by later sections)
+seed:          ## Load seed data (S1: 30 Pune-district water bodies + zones)
 	$(COMPOSE) run --rm api python -m app.db.seed
+
+load:          ## Load a GeoJSON/shapefile: make load f=path.geojson d=Pune
+	$(COMPOSE) run --rm -v "$(abspath $(f))":/data/in$(suffix $(f)):ro api 		python -m app.services.registry.load /data/in$(suffix $(f)) --district "$(d)"
+
+mgrs-grid:     ## Download ESA's Sentinel-2 tiling grid and build the exact MGRS cache
+	cd backend && $(UV) run python -m app.services.registry.mgrs download
 
 shell:         ## Shell inside the api container
 	$(COMPOSE) run --rm api bash

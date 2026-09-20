@@ -61,10 +61,26 @@ uv run uvicorn app.main:app --reload
 | minio    | `quay.io/minio/minio`                      | 9000, 9001 |
 | titiler  | `ghcr.io/developmentseed/titiler`  | 8001       |
 
+## Water body registry (S1)
+
+```sh
+make seed                                   # 30 Pune-district bodies from OSM outlines, 4-8 zones each
+make load f=my_bodies.geojson d=Nashik      # any GeoJSON / shapefile; props: name, tier, kind, drinking_water, urban
+make mgrs-grid                              # optional: exact Sentinel-2 tile lookup from ESA's KML grid
+```
+
+- Tiering: Tier 1 = drinking-water sources, urban river stretches, or >= 10 km²;
+  Tier 2 >= 1 km²; Tier 3 the rest. An explicit `tier` property wins.
+- Zones: k-means over pixel centroids → Voronoi cells clipped to the body, so
+  zones tile it exactly. Zones are only regenerated when the geometry changes.
+- MGRS tiles: computed arithmetically by default; `make mgrs-grid` switches to
+  the exact ESA grid (cache under `backend/data/mgrs/`, git-ignored).
+- Seed outlines © OpenStreetMap contributors (ODbL), fetched via Overpass.
+
 ## Status
 
 - [x] S0 — scaffold and infrastructure
-- [ ] S1 — water body registry
+- [x] S1 — water body registry
 - [ ] S2 — satellite ingestion (L3)
 - [ ] S3 — preprocessing and water mask (L4 + L5)
 - [ ] S4 — spectral indicators (L6)

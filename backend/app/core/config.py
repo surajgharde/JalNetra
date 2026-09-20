@@ -1,6 +1,7 @@
 """Application settings, read from environment / .env via pydantic-settings."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -40,6 +41,13 @@ class Settings(BaseSettings):
 
     # --- TiTiler ---
     titiler_url: str = "http://localhost:8001"
+
+    # --- Local data cache (MGRS grid, seed files, cached arrays in non-Docker dev) ---
+    data_dir: Path = Path("data")
+    s2_grid_kml_url: str = (
+        "https://sentinels.copernicus.eu/documents/247904/1955685/"
+        "S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml"
+    )
 
     # --- Health ---
     health_check_timeout_s: float = 3.0

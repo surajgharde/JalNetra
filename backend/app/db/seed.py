@@ -6,8 +6,11 @@ from collections.abc import Callable
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.services.registry.seed import seed_pune_water_bodies
 
-SEEDERS: dict[str, Callable[[], None]] = {}
+SEEDERS: dict[str, Callable[[], object]] = {
+    "pune_water_bodies": seed_pune_water_bodies,
+}
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +22,8 @@ def main() -> None:
         return
     for name, seeder in SEEDERS.items():
         log.info("running seeder", extra={"seeder": name})
-        seeder()
+        result = seeder()
+        log.info("seeder finished", extra={"seeder": name, "result": str(result)})
 
 
 if __name__ == "__main__":

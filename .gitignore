@@ -29,3 +29,9 @@ data/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local data caches (MGRS grid KML, cached arrays)
+backend/data/
+
+# Celery beat state (written by the beat container into the bind mount)
+backend/celerybeat-schedule*
