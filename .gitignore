@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+htmlcov/
+.coverage
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+frontend/dist/
+
+# Data & notebooks
+notebooks/.ipynb_checkpoints/
+data/
+*.tif
+*.tiff
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
