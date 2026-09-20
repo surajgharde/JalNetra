@@ -49,6 +49,20 @@ class Settings(BaseSettings):
         "S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml"
     )
 
+    # --- Satellite ingestion (L3) ---
+    stac_source: Literal["earth-search", "cdse"] = "earth-search"
+    stac_fallback: bool = True  # try the other source when the primary fails
+    earth_search_url: str = "https://earth-search.aws.element84.com/v1"
+    cdse_stac_url: str = "https://stac.dataspace.copernicus.eu/v1/"
+    cdse_token_url: str = (
+        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+    )
+    cdse_client_id: str | None = None
+    cdse_client_secret: str | None = None
+    stac_max_cloud_pct: float = 60.0  # tile-level threshold for the scene `usable` flag
+    ingest_lookback_days: int = 7  # beat poll window for Tier 1 bodies
+    ingest_cache_prefix: str = "cache"  # MinIO key prefix for windowed arrays
+
     # --- Health ---
     health_check_timeout_s: float = 3.0
 

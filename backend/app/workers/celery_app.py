@@ -1,4 +1,4 @@
-"""Celery application. Queues are split by cost in S12; S0 uses one default queue."""
+"""Celery application. Queues: default, ingestion (S12 adds processing/scoring/reporting)."""
 
 from celery import Celery
 from celery.schedules import crontab
@@ -24,11 +24,19 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
     task_default_queue="default",
+    task_routes={
+        "app.workers.tasks.ingest_water_body": {"queue": "ingestion"},
+        "app.workers.tasks.poll_tier1_scenes": {"queue": "ingestion"},
+    },
     beat_schedule={
-        # Proves beat is alive; S2 replaces this with the Tier 1 scene poll.
         "heartbeat-every-5-min": {
             "task": "app.workers.tasks.heartbeat",
             "schedule": crontab(minute="*/5"),
+        },
+        # Sentinel-2 revisits every 2-5 days and L2A lands within ~24 h; 6 h is plenty.
+        "poll-tier1-scenes-every-6h": {
+            "task": "app.workers.tasks.poll_tier1_scenes",
+            "schedule": crontab(minute="15", hour="*/6"),
         },
     },
 )
