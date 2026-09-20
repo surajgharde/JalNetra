@@ -3,7 +3,7 @@ additionally hits Earth Search and MinIO for real."""
 
 import time
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
@@ -38,7 +38,7 @@ def _cand(scene_id: str, day: date, cloud: float, source: str = "earth-search") 
 
 
 class _Source:
-    name = "fake"
+    name: ClassVar[str] = "fake"
 
     def __init__(self, cands: list[SceneCandidate], fail: bool = False) -> None:
         self.cands, self.fail, self.calls = cands, fail, 0

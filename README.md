@@ -77,11 +77,31 @@ make mgrs-grid                              # optional: exact Sentinel-2 tile lo
   the exact ESA grid (cache under `backend/data/mgrs/`, git-ignored).
 - Seed outlines © OpenStreetMap contributors (ODbL), fetched via Overpass.
 
+## Satellite ingestion (S2, L3)
+
+```sh
+# one water body, one day (Celery task; also callable from Python via app.services.l03_ingestion.service)
+docker compose run --rm api python -c "from app.workers.tasks import ingest_water_body as t; print(t.delay('wb_khadakwasla','2026-05-03').get())"
+```
+
+- Sources: **Earth Search** (AWS, no auth, default) with **CDSE** (OAuth2 client
+  credentials) as automatic fallback — `STAC_SOURCE`, `STAC_FALLBACK`. The source
+  that served each scene is recorded on `scenes.source`.
+- **Windowed reads only.** Bands B03 B04 B05 B08 B11 SCL are read through
+  `/vsicurl/` for the water body's bounding box (+100 m), snapped to the 20 m grid
+  so every band lands on one shared 10 m grid (20 m bands bilinear, SCL nearest).
+  Khadakwasla: ~7 MB and ~20 s per pass instead of ~13 GB per tile.
+- Arrays are cached in MinIO at `cache/{water_body_id}/{scene_id}/bands.npz`;
+  `scene_ingestions` makes the task idempotent on (water_body_id, scene_id).
+- Beat: `poll_tier1_scenes` every 6 h enqueues new Tier 1 scenes on the
+  `ingestion` queue; `ingest_water_body` retries transient failures with
+  exponential backoff (max 5, capped at 10 min).
+
 ## Status
 
 - [x] S0 — scaffold and infrastructure
 - [x] S1 — water body registry
-- [ ] S2 — satellite ingestion (L3)
+- [x] S2 — satellite ingestion (L3)
 - [ ] S3 — preprocessing and water mask (L4 + L5)
 - [ ] S4 — spectral indicators (L6)
 - [ ] S5 — baseline + rainfall (L7)
