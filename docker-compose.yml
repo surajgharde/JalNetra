@@ -42,9 +42,23 @@ services:
     ports:
       - "8000:8000"
 
-  worker:
+  # One worker pool per cost class (S12): a slow PDF never blocks a STAC read.
+  # Each pool serves Prometheus metrics on :9100 inside the compose network.
+  worker-ingestion:
     <<: *backend
-    command: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=2 -Q default,ingestion,processing,reporting
+    command: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=${WORKERS_INGESTION:-2} -Q default,ingestion -n ingestion@%h
+
+  worker-processing:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=${WORKERS_PROCESSING:-2} -Q processing -n processing@%h
+
+  worker-scoring:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=${WORKERS_SCORING:-1} -Q scoring -n scoring@%h
+
+  worker-reporting:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery_app worker --loglevel=INFO --concurrency=${WORKERS_REPORTING:-1} -Q reporting -n reporting@%h
 
   beat:
     <<: *backend
@@ -125,6 +139,44 @@ services:
       minio:
         condition: service_healthy
 
+  # --- ops profile: `docker compose --profile ops up -d` ---------------------------
+  flower:
+    <<: *backend
+    profiles: ["ops"]
+    command: celery -A app.workers.celery_app:celery_app flower --port=5555 --url_prefix=
+    ports:
+      - "5555:5555"
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["ops"]
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - promdata:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: ["ops"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-jalnetra}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   miniodata:
+  promdata:
+  grafanadata:

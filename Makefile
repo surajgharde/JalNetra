@@ -3,13 +3,16 @@
 COMPOSE ?= docker compose
 UV      ?= uv
 
-.PHONY: up down logs migrate revision test test-integration lint fmt seed load mgrs-grid shell psql clean
+.PHONY: up ops down logs migrate revision test test-integration lint fmt seed load mgrs-grid backfill backfill-status shell psql clean
 
 up:            ## Build and start the full local stack
 	$(COMPOSE) up -d --build
 
+ops:           ## Start the stack plus Flower :5555, Prometheus :9090, Grafana :3000
+	$(COMPOSE) --profile ops up -d --build
+
 down:          ## Stop the stack (keeps volumes)
-	$(COMPOSE) down
+	$(COMPOSE) --profile ops down
 
 logs:          ## Tail all service logs
 	$(COMPOSE) logs -f --tail=100
@@ -40,6 +43,12 @@ load:          ## Load a GeoJSON/shapefile: make load f=path.geojson d=Pune
 
 mgrs-grid:     ## Download ESA's Sentinel-2 tiling grid and build the exact MGRS cache
 	cd backend && $(UV) run python -m app.services.registry.mgrs download
+
+backfill:      ## Resumable full-pipeline backfill: make backfill wb=wb_khadakwasla from=2023-01-01 to=2026-09-01
+	$(COMPOSE) run --rm api python -m app.cli backfill --water-body $(wb) --from $(from) --to $(to) --resume
+
+backfill-status: ## Recent CLI backfills and their checkpoints
+	$(COMPOSE) run --rm api python -m app.cli backfill-status
 
 shell:         ## Shell inside the api container
 	$(COMPOSE) run --rm api bash

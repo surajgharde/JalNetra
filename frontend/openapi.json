@@ -1150,7 +1150,7 @@
      "validations"
     ],
     "summary": "Create Validation",
-    "description": "Submit a field or lab result against an alert. The verdict (matched /\nnot_matched / inconclusive) is computed by the validation loop (S11).",
+    "description": "Submit a field or lab result against an alert. The verdict is computed\nimmediately (matched / not_matched / inconclusive), the alert's status is\nupdated, and a field-confirmed normal reading is fed back into the\nseasonal baseline.",
     "operationId": "create_validation_api_v1_validations_post",
     "requestBody": {
      "required": true,
@@ -1190,7 +1190,7 @@
      "validations"
     ],
     "summary": "List Validations",
-    "description": "Submitted validations, newest first, with their verdict when computed.",
+    "description": "Submitted validations, newest first, with their verdict.",
     "operationId": "list_validations_api_v1_validations_get",
     "parameters": [
      {
@@ -1207,6 +1207,23 @@
         }
        ],
        "title": "Alert Id"
+      }
+     },
+     {
+      "name": "verdict",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "pattern": "^(matched|not_matched|inconclusive)$"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Verdict"
       }
      },
      {
@@ -1248,6 +1265,156 @@
         }
        }
       }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/validations/summary": {
+   "get": {
+    "tags": [
+     "validations"
+    ],
+    "summary": "Validation Summary",
+    "description": "Precision to date, overall and by indicator / severity band.",
+    "operationId": "validation_summary_api_v1_validations_summary_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationSummary"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/validations/{validation_id}": {
+   "get": {
+    "tags": [
+     "validations"
+    ],
+    "summary": "Get Validation",
+    "operationId": "get_validation_api_v1_validations__validation_id__get",
+    "parameters": [
+     {
+      "name": "validation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Validation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/validations/{validation_id}/photo": {
+   "post": {
+    "tags": [
+     "validations"
+    ],
+    "summary": "Upload Photo",
+    "description": "Attach a site photo to a validation (stored in MinIO).",
+    "operationId": "upload_photo_api_v1_validations__validation_id__photo_post",
+    "parameters": [
+     {
+      "name": "validation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Validation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_photo_api_v1_validations__validation_id__photo_post"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "validations"
+    ],
+    "summary": "Get Photo",
+    "operationId": "get_photo_api_v1_validations__validation_id__photo_get",
+    "parameters": [
+     {
+      "name": "validation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Validation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
      },
      "422": {
       "description": "Validation Error",
@@ -1821,6 +1988,21 @@
      "status"
     ],
     "title": "AlertStatusUpdate"
+   },
+   "Body_upload_photo_api_v1_validations__validation_id__photo_post": {
+    "properties": {
+     "file": {
+      "type": "string",
+      "contentMediaType": "application/octet-stream",
+      "title": "File",
+      "description": "JPEG, PNG or WebP, up to 15 MB"
+     }
+    },
+    "type": "object",
+    "required": [
+     "file"
+    ],
+    "title": "Body_upload_photo_api_v1_validations__validation_id__photo_post"
    },
    "ContributionOut": {
     "properties": {
@@ -3467,6 +3649,62 @@
       ],
       "title": "Verdict Reason"
      },
+     "alert_severity": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Alert Severity"
+     },
+     "alert_indicator": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Alert Indicator"
+     },
+     "alert_priority_score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Alert Priority Score"
+     },
+     "alert_observed_on": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Alert Observed On"
+     },
+     "photo_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Photo Url"
+     },
      "created_at": {
       "type": "string",
       "format": "date-time",
@@ -3486,7 +3724,161 @@
      "verdict_reason",
      "created_at"
     ],
-    "title": "ValidationOut"
+    "title": "ValidationOut",
+    "examples": [
+     {
+      "alert_id": "alr_2026_0917_khadakwasla_z3",
+      "alert_indicator": "ndti_turbidity",
+      "alert_observed_on": "2026-09-17",
+      "alert_priority_score": 72.0,
+      "alert_severity": "high",
+      "created_at": "2026-09-19T11:20:00Z",
+      "id": 12,
+      "lab_results": {
+       "ph": 7.6,
+       "tss_mg_l": 62.0,
+       "turbidity_ntu": 48.0
+      },
+      "observed_condition": "Brown plume near the eastern inlet, no odour.",
+      "photo_url": "/api/v1/validations/12/photo",
+      "sampled_on": "2026-09-19",
+      "submitted_by": "RO Pune field team",
+      "verdict": "matched",
+      "verdict_reason": "turbidity 48 NTU is at or above the threshold of 10 NTU"
+     }
+    ]
+   },
+   "ValidationSummary": {
+    "properties": {
+     "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "title": "As Of"
+     },
+     "last_validation_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Validation At"
+     },
+     "overall": {
+      "$ref": "#/components/schemas/VerdictBucket"
+     },
+     "by_indicator": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/VerdictBucket"
+      },
+      "type": "object",
+      "title": "By Indicator"
+     },
+     "by_severity": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/VerdictBucket"
+      },
+      "type": "object",
+      "title": "By Severity"
+     },
+     "note": {
+      "type": "string",
+      "title": "Note"
+     }
+    },
+    "type": "object",
+    "required": [
+     "as_of",
+     "last_validation_at",
+     "overall",
+     "by_indicator",
+     "by_severity",
+     "note"
+    ],
+    "title": "ValidationSummary",
+    "examples": [
+     {
+      "as_of": "2026-09-21T12:00:00Z",
+      "by_indicator": {
+       "ndti_turbidity": {
+        "inconclusive": 1,
+        "matched": 5,
+        "n": 7,
+        "not_matched": 1,
+        "precision": 0.833
+       }
+      },
+      "by_severity": {
+       "high": {
+        "inconclusive": 0,
+        "matched": 4,
+        "n": 4,
+        "not_matched": 0,
+        "precision": 1.0
+       },
+       "medium": {
+        "inconclusive": 1,
+        "matched": 3,
+        "n": 6,
+        "not_matched": 2,
+        "precision": 0.6
+       }
+      },
+      "last_validation_at": "2026-09-19T11:20:00Z",
+      "note": "precision = matched / (matched + not_matched)",
+      "overall": {
+       "inconclusive": 1,
+       "matched": 7,
+       "n": 10,
+       "not_matched": 2,
+       "precision": 0.778
+      }
+     }
+    ]
+   },
+   "VerdictBucket": {
+    "properties": {
+     "matched": {
+      "type": "integer",
+      "title": "Matched"
+     },
+     "not_matched": {
+      "type": "integer",
+      "title": "Not Matched"
+     },
+     "inconclusive": {
+      "type": "integer",
+      "title": "Inconclusive"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "default": 0
+     },
+     "precision": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Precision",
+      "description": "matched / (matched + not_matched)"
+     }
+    },
+    "type": "object",
+    "required": [
+     "matched",
+     "not_matched",
+     "inconclusive",
+     "precision"
+    ],
+    "title": "VerdictBucket"
    },
    "WaterBodyDetail": {
     "properties": {

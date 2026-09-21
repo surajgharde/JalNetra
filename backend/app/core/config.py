@@ -155,6 +155,31 @@ class Settings(BaseSettings):
     rate_limit_tiles: str = "2000/minute"
     tile_cache_max_age_s: int = 3600  # Cache-Control on proxied tiles (chips are immutable)
 
+    # --- Validation loop (L13) ---
+    validation_max_lag_days: int = 5  # sample later than this after the observation -> inconclusive
+    validation_thresholds: dict[str, float] = Field(
+        default_factory=lambda: {"turbidity_ntu": 10.0, "tss_mg_l": 30.0, "chlorophyll_ug_l": 20.0}
+    )
+    validation_photo_prefix: str = "validations"  # MinIO prefix for uploaded photos
+    validation_photo_max_bytes: int = 15 * 1024 * 1024
+    retrain_target_matched: float = 90.0  # regression target for a corroborated alert
+    retrain_target_not_matched: float = 10.0  # ... and for a field-confirmed false positive
+    retrain_alert_threshold: float = (
+        40.0  # predicted priority at/above this counts as "would alert"
+    )
+
+    # --- Ops and observability (S12) ---
+    app_version: str = "0.1.0"
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.05
+    worker_metrics_port: int = 9100  # each worker pool serves Prometheus metrics here
+    ops_gauge_refresh_minutes: int = 15
+    tier1_stale_days: int = (
+        10  # alerting rule: page when a Tier 1 body has had no usable scene this long
+    )
+    ingest_lookback_days_tier2: int = 3
+    ingest_lookback_days_tier3: int = 10
+
     # --- Health ---
     health_check_timeout_s: float = 3.0
 

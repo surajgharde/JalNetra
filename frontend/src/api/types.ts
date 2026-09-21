@@ -19,7 +19,14 @@ export type WaterBodyDetail = S["WaterBodyDetail"];
 export type LatestObservation = S["LatestObservation"];
 export type ZoneFeatureCollection = S["FeatureCollection"];
 export type ZoneFeature = S["Feature"];
-export type ZoneFeatureProps = S["ZoneFeatureProps"];
+export interface ZoneFeatureProps {
+  id: string;
+  name: string;
+  seq: number;
+  area_km2: number;
+  baseline_status: "usable" | "building" | "none";
+  open_alert_id: string | null;
+}
 
 export type ObservationItem = S["ObservationItem"];
 export type ObservationList = S["ObservationList"];
@@ -45,6 +52,7 @@ export type ValidationIn = S["ValidationIn"];
 export type ValidationOut = S["ValidationOut"];
 export type ValidationList = S["ValidationList"];
 export type LabResults = S["LabResults"];
+export type ValidationSummary = S["ValidationSummary"];
 
 export type IngestJobRequest = S["IngestJobRequest"];
 export type JobOut = S["JobOut"];

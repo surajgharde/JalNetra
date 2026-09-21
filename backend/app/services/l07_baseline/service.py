@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.db.models import Baseline, IndicatorObservation, WaterBody, Zone
+from app.db.models import Baseline, BaselineSample, IndicatorObservation, WaterBody, Zone
 from app.services.l06_indicators.registry import INDICATORS
 from app.services.l07_baseline.robust import (
     WindowStats,
@@ -153,8 +153,17 @@ def load_history(
     )
     if until is not None:
         stmt = stmt.where(IndicatorObservation.observed_at < until)
-    rows = session.execute(stmt).all()
-    return SeriesHistory([r[0] for r in rows], [float(r[1]) for r in rows])
+    rows = [(r[0], float(r[1])) for r in session.execute(stmt).all()]
+    if statistic == "mean":
+        # Field-validated true negatives (S11) count as extra confirmed-normal samples.
+        extra = select(BaselineSample.observed_at, BaselineSample.value).where(
+            BaselineSample.zone_id == zone_id, BaselineSample.indicator == indicator
+        )
+        if until is not None:
+            extra = extra.where(BaselineSample.observed_at < until)
+        rows += [(r[0], float(r[1])) for r in session.execute(extra).all()]
+        rows.sort(key=lambda r: r[0])
+    return SeriesHistory([r[0] for r in rows], [r[1] for r in rows])
 
 
 def min_history_days(tier: int, settings: Settings) -> int:

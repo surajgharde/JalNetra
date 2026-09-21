@@ -20,7 +20,7 @@ backend/    FastAPI app + Celery workers (Python 3.11, uv)
   app/workers/    Celery app, tasks, signals
   app/schemas/    Pydantic v2 response models
   tests/
-frontend/   Vite + React 18 (screens land in S10)
+frontend/   Vite + React 18 + TypeScript dashboard (S10)
 infra/      compose init SQL
 notebooks/  exploration
 ```
@@ -274,6 +274,113 @@ the demo-facing models carry `/docs` examples.
 - `validations` table + `POST/GET /validations` store field results now;
   verdicts, photo upload and the precision summary land in S11.
 
+## Frontend (S10, L1)
+
+```sh
+cd frontend
+npm install
+npm run dev            # http://localhost:5173, proxies /api, /tiles, /health to :8000
+npm run gen:api        # regenerate src/api/schema.d.ts from ./openapi.json (export it from the backend first)
+npm run build          # tsc -b && vite build
+```
+
+Export the schema with
+`cd backend && uv run python -c "import json; from app.main import app; json.dump(app.openapi(), open('../frontend/openapi.json','w'), indent=1)"`.
+
+- **Typed client only.** `src/api/types.ts` aliases the generated OpenAPI
+  types; `src/api/client.ts` is the only module that touches the transport
+  (`http.ts`). No `fetch` in components, no mock data — the app runs against
+  the real backend.
+- **Screens**: dashboard (water body list → Leaflet map with body boundary,
+  zone polygons, open-alert polygons and per-layer raster toggles pointed at
+  `/tiles/{layer}/{water_body_id}/{date}/{z}/{x}/{y}.png`; timeline scrubber
+  over observations; indicator panel with baseline/z/deviation; Recharts series
+  with the seasonal p10–p90 band), priority queue (server-side filters),
+  alert slide-over (priority ring, signed contribution chart with the rainfall
+  discount in red, indicators, timeline, evidence + PDF brief, status workflow,
+  field validation form).
+- **Disclaimer** comes from the API response on every alert view, list, feed
+  and indicator panel (`components/Disclaimer.tsx`); never hardcoded, never hidden.
+- **Pipeline readout**: "Run pipeline" posts `/jobs/ingest`, polls
+  `/jobs/{id}` every 2 s, shows the stage in flight and per-stage bars, and
+  invalidates every panel when the job finishes.
+- Loading skeletons, empty and error states on every panel; `?wb=` and
+  `?alert=` in the URL make any demo state a shareable link.
+
+## Validation loop (S11, L13)
+
+```sh
+curl -X POST localhost:8000/api/v1/validations -H 'content-type: application/json'   -d '{"alert_id":"alr_2026_0917_khadakwasla_z3","sampled_on":"2026-09-19","lab_results":{"turbidity_ntu":48},"submitted_by":"RO Pune"}'
+curl -F file=@site.jpg localhost:8000/api/v1/validations/12/photo
+curl localhost:8000/api/v1/validations/summary            # precision to date, by indicator and severity
+docker compose run --rm api python -c "from app.workers.tasks import train_priority_model as t; print(t.delay().get())"
+```
+
+- **Verdict on submit** (`l13_validation/verdict.py`): the lab measurement
+  that corresponds to the alert's primary indicator (turbidity/TSS for NDTI and
+  sediment, chlorophyll-a for NDCI and FAI) is compared with a configurable
+  screening threshold (`VALIDATION_THRESHOLDS`: 10 NTU, 30 mg/L, 20 µg/L) →
+  `matched` / `not_matched`; a sample more than 5 days after the observation or
+  without the key measurement is `inconclusive`. The reason is stored verbatim.
+- **Alert status moves**: matched → `validated`, not_matched → `dismissed`,
+  inconclusive → `investigating`, audited with who and the verdict reason.
+- **Feedback into baselines**: a `not_matched` verdict writes the satellite
+  values the alert was raised on into `baseline_samples`; L7's `load_history`
+  unions them into the seasonal history, so a field-confirmed normal day widens
+  the band where it was wrong.
+- **Precision summary** `GET /validations/summary` = matched / (matched +
+  not_matched), overall, by indicator, by severity; each validation snapshots
+  the alert's severity/indicator/priority at submission so later rescoring
+  cannot rewrite the record.
+- **Retraining** (`l13_validation/training.py`, weekly beat + manual task):
+  exits cleanly with a logged reason below 50 conclusive validations; otherwise
+  fits XGBoost on a training split, measures precision at the alert threshold
+  on a held-out split for both the candidate and the active model, and promotes
+  only if strictly better. A worse model is recorded in `priority_models` but
+  never activated. Requires `uv sync --extra ml`.
+- Photos go to MinIO `validations/{id}/…`; the frontend form uploads one after
+  submit and shows the verdict and its reason immediately.
+
+## Scale, ops and observability (S12)
+
+```sh
+make ops                                   # stack + Flower :5555, Prometheus :9090, Grafana :3000 (admin / jalnetra)
+make backfill wb=wb_khadakwasla from=2023-01-01 to=2026-09-01   # resumable; re-run the same line after an interruption
+make backfill-status
+docker compose run --rm api python -m app.cli ops-gauges
+```
+
+- **Queues by cost** — `ingestion` (STAC, band reads, rainfall), `processing`
+  (masks, indicators, detectors, baselines), `scoring` (priority, alerts,
+  retraining), `reporting` (briefs, delivery). Compose runs one worker pool per
+  queue (`WORKERS_*` sizes), so a slow PDF never blocks a scene read; Flower
+  shows the four queues draining independently.
+- **Beat** — Tier 1 poll every 6 h, Tier 2 daily, Tier 3 weekly; rainfall daily
+  at 02:00 IST; baseline rebuild monthly; ops gauges every 15 min; retraining
+  attempt weekly.
+- **Backfill CLI** (`app/cli.py`) — runs the whole chain in-process chunk by
+  chunk and checkpoints the last completed chunk on a `jobs` row; `--resume`
+  continues from the next chunk. Every stage is idempotent on (body, scene),
+  so nothing is redone. Backfill alerts are never dispatched.
+- **Prometheus** (`app/core/metrics.py`) — scenes ingested, scenes rejected for
+  cloud (STAC vs mask), zones processed, alerts raised/updated, alerts gated by
+  rainfall, task duration by stage (Celery signals), STAC failures and
+  fallbacks, dispatch outcomes, plus gauges for Grafana alerting: days since
+  the last usable scene per Tier 1 body, open alerts, baseline-building zones,
+  validation precision. API at `/metrics`; each worker pool on `:9100`.
+- **Grafana** — provisioned datasource + `infra/grafana/dashboards/jalnetra-pipeline.json`.
+  **Alerting rules** in `infra/prometheus/alerts.yml`: `Tier1WaterBodyStale`
+  pages when any Tier 1 body has had no usable scene for 10 days; plus STAC
+  failing, slow stages, worker metrics down, dispatch failures.
+- **Sentry** — set `SENTRY_DSN` (needs the `ops` extra, baked into the image);
+  every task event is tagged with `water_body_id` / `scene_id` / `alert_id`.
+- **Graceful degradation** — `ChainedSource` falls back to the secondary STAC
+  source, counts the failure and the fallback, and `scenes.source` records who
+  served each scene (`tests/test_ops.py` covers the kill-the-primary case).
+- **CI** (`.github/workflows/ci.yml`) — ruff, mypy, pytest, an Alembic
+  upgrade/downgrade round-trip against TimescaleDB+PostGIS, frontend
+  `tsc`+`vite build`, and a backend image build.
+
 ## Status
 
 - [x] S0 — scaffold and infrastructure
@@ -286,6 +393,6 @@ the demo-facing models carry `/docs` examples.
 - [x] S7 — fusion, priority, explainability (L9 + L10)
 - [x] S8 — alerts and reports (L11 + L12)
 - [x] S9 — API and tile server (L2)
-- [ ] S10 — frontend (L1)
-- [ ] S11 — validation loop (L13)
-- [ ] S12 — scale and ops
+- [x] S10 — frontend (L1)
+- [x] S11 — validation loop (L13)
+- [x] S12 — scale and ops

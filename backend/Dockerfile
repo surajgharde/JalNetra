@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Install dependencies first so source edits do not bust the layer cache.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-install-project --extra ops
 
 COPY . .
 

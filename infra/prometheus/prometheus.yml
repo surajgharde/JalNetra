@@ -1,0 +1,26 @@
+# Prometheus scrape config for the compose stack (S12).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+  - job_name: workers
+    static_configs:
+      - targets:
+          - worker-ingestion:9100
+          - worker-processing:9100
+          - worker-scoring:9100
+          - worker-reporting:9100
+        labels:
+          role: worker
+  - job_name: flower
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["flower:5555"]

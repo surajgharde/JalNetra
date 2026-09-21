@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.core.storage import ObjectStore
 from app.db.models import RasterChip, Scene, SceneIngestion, WaterBody, WaterMaskRecord
@@ -138,6 +139,7 @@ def compute_water_mask(
         row.usable = pre.usable
 
         if not pre.usable:
+            metrics.scenes_rejected_cloud.labels(stage="mask").inc()
             for attr in (
                 "mndwi_threshold",
                 "threshold_method",

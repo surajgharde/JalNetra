@@ -8,6 +8,17 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          map: ["leaflet", "react-leaflet"],
+          charts: ["recharts"],
+          vendor: ["react", "react-dom", "react-router-dom", "@tanstack/react-query", "zustand", "date-fns"],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

@@ -32,7 +32,6 @@ from app.services.l07_baseline.service import (
 from app.services.l08_anomaly.service import IndicatorsMissingError, scenes_needing_anomalies
 from app.services.l08_anomaly.service import detect_anomalies as _detect_anomalies
 from app.services.l08_anomaly.service import process_water_body as _process_anomalies
-from app.services.l09_fusion.models import load_validated_examples, train_xgboost
 from app.services.l09_fusion.service import process_water_body as _process_scores
 from app.services.l09_fusion.service import scenes_needing_scores
 from app.services.l09_fusion.service import score_scene as _score_scene
@@ -40,6 +39,8 @@ from app.services.l11_alerts.assembler import assemble_scene as _assemble_scene
 from app.services.l12_delivery.brief import generate_brief as _generate_brief
 from app.services.l12_delivery.dispatch import DeliveryError
 from app.services.l12_delivery.dispatch import dispatch_alert as _dispatch_alert
+from app.services.l13_validation.training import retrain as _retrain
+from app.services.ops.gauges import refresh_ops_gauges as _refresh_ops_gauges
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -471,20 +472,15 @@ def process_scores(
 
 
 @celery_app.task(name="app.workers.tasks.train_priority_model", queue="processing")
-def train_priority_model(activate: bool = False) -> dict[str, Any]:
-    """Manual: fit an XGBoost priority model on validated outcomes (S11) and
-    register it. Refuses below ``priority_train_min_validations``."""
+def train_priority_model() -> dict[str, Any]:
+    """Retrain the priority model on validated outcomes (S11). Exits cleanly with
+    a logged reason below ``priority_train_min_validations``; a new model is
+    promoted only if its held-out precision beats the active model's."""
     with sync_session() as session:
-        examples = load_validated_examples(session)
-        row = train_xgboost(session, get_store(), examples, activate=activate)
+        result = _retrain(session, get_store())
         session.commit()
-        payload = {
-            "version": row.version,
-            "n_training": row.n_training,
-            "metrics": row.metrics,
-            "active": row.active,
-        }
-    log.info("priority model trained", extra=payload)
+    payload = result.to_dict()
+    log.info("priority model retrain", extra=payload)
     return payload
 
 
@@ -566,19 +562,39 @@ def process_water_body(
     return payload
 
 
-@celery_app.task(name="app.workers.tasks.poll_tier1_scenes", queue="ingestion")
-def poll_tier1_scenes() -> dict[str, Any]:
-    """Beat job (every 6 h): find new usable Tier 1 scenes and enqueue their ingestion."""
+@celery_app.task(name="app.workers.tasks.poll_tier_scenes", queue="ingestion")
+def poll_tier_scenes(tier: int = 1) -> dict[str, Any]:
+    """Beat job: find new usable scenes for every body of a tier and enqueue
+    their ingestion (Tier 1 every 6 h, Tier 2 daily, Tier 3 weekly)."""
     settings = get_settings()
+    lookback = {
+        1: settings.ingest_lookback_days,
+        2: settings.ingest_lookback_days_tier2,
+        3: settings.ingest_lookback_days_tier3,
+    }.get(tier, settings.ingest_lookback_days)
     with sync_session() as session:
-        pairs = pending_scenes_for_tier(
-            session, tier=1, lookback_days=settings.ingest_lookback_days
-        )
+        pairs = pending_scenes_for_tier(session, tier=tier, lookback_days=lookback)
         session.commit()
     for wb_id, day in pairs:
         ingest_water_body.delay(wb_id, day.isoformat())
-    log.info("tier1 poll", extra={"enqueued": len(pairs)})
-    return {"enqueued": [[wb, d.isoformat()] for wb, d in pairs]}
+    log.info("tier poll", extra={"tier": tier, "enqueued": len(pairs)})
+    return {"tier": tier, "enqueued": [[wb, d.isoformat()] for wb, d in pairs]}
+
+
+@celery_app.task(name="app.workers.tasks.poll_tier1_scenes", queue="ingestion")
+def poll_tier1_scenes() -> dict[str, Any]:
+    """Kept for callers of the S2 name; same as ``poll_tier_scenes(1)``."""
+    result: dict[str, Any] = poll_tier_scenes(1)
+    return result
+
+
+@celery_app.task(name="app.workers.tasks.refresh_ops_gauges", queue="scoring")
+def refresh_ops_gauges() -> dict[str, Any]:
+    """Beat job: recompute the operational gauges Grafana alerts on."""
+    with sync_session() as session:
+        snapshot = _refresh_ops_gauges(session)
+    log.info("ops gauges refreshed", extra=snapshot)
+    return snapshot
 
 
 # --- S5: baselines + rainfall ------------------------------------------------------

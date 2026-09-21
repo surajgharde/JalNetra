@@ -33,6 +33,8 @@ dependencies = [
     "matplotlib>=3.9",
     "jinja2>=3.1",
     "slowapi>=0.1.9",
+    "python-multipart>=0.0.9",
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +44,11 @@ ml = [
     "xgboost>=2.0",
     "shap>=0.46",
 ]
+# Error reporting + task monitoring (S12). Flower runs as its own compose service.
+ops = [
+    "sentry-sdk[fastapi,celery,sqlalchemy]>=2.0",
+    "flower>=2.0",
+]
 
 [dependency-groups]
 dev = [
@@ -49,6 +56,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
     "mypy>=1.11",
+    "types-PyYAML>=6.0",
 ]
 
 [tool.uv]
@@ -73,7 +81,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*", "reportlab.*", "matplotlib.*", "slowapi.*"]
+module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*", "reportlab.*", "matplotlib.*", "slowapi.*", "sentry_sdk.*", "prometheus_client.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

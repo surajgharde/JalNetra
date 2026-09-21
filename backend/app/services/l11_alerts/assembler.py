@@ -25,6 +25,7 @@ from geoalchemy2.shape import from_shape, to_shape
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.db.models import (
     Alert,
@@ -288,9 +289,11 @@ def assemble_scene(
         if action == "created":
             assert alert is not None
             result.created.append(alert.id)
+            metrics.alerts_raised.labels(action="created", severity=alert.severity).inc()
         elif action == "updated":
             assert alert is not None
             result.updated.append(alert.id)
+            metrics.alerts_raised.labels(action="updated", severity=alert.severity).inc()
             if escalated:
                 result.escalated.append(alert.id)
         elif action == "appended":

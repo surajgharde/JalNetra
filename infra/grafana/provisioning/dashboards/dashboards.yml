@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: jalnetra
+    folder: JalNetra
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

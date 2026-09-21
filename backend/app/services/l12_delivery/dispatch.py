@@ -35,6 +35,7 @@ from jinja2 import Environment, select_autoescape
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.db.models import Alert, Dispatch, Recipient, WaterBody, Zone
 from app.schemas.alerts import AlertOut
@@ -185,6 +186,7 @@ def send_email(recipient: Recipient, payload: AlertOut, *, settings: Settings) -
 def _log(
     session: Session, alert: Alert, r: Recipient, reason: str, status: str, detail: str | None
 ) -> None:
+    metrics.dispatches.labels(channel=r.channel, status=status).inc()
     session.add(
         Dispatch(
             alert_id=alert.id,

@@ -138,7 +138,97 @@ class ValidationOut(BaseModel):
     submitted_by: str | None
     verdict: Literal["matched", "not_matched", "inconclusive"] | None
     verdict_reason: str | None
+    alert_severity: str | None = None
+    alert_indicator: str | None = None
+    alert_priority_score: float | None = None
+    alert_observed_on: date | None = None
+    photo_url: str | None = None
     created_at: datetime
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 12,
+                    "alert_id": "alr_2026_0917_khadakwasla_z3",
+                    "sampled_on": "2026-09-19",
+                    "lab_results": {"turbidity_ntu": 48.0, "tss_mg_l": 62.0, "ph": 7.6},
+                    "observed_condition": "Brown plume near the eastern inlet, no odour.",
+                    "notes": None,
+                    "submitted_by": "RO Pune field team",
+                    "verdict": "matched",
+                    "verdict_reason": "turbidity 48 NTU is at or above the threshold of 10 NTU",
+                    "alert_severity": "high",
+                    "alert_indicator": "ndti_turbidity",
+                    "alert_priority_score": 72.0,
+                    "alert_observed_on": "2026-09-17",
+                    "photo_url": "/api/v1/validations/12/photo",
+                    "created_at": "2026-09-19T11:20:00Z",
+                }
+            ]
+        }
+    )
+
+
+class VerdictBucket(BaseModel):
+    matched: int
+    not_matched: int
+    inconclusive: int
+    n: int = 0
+    precision: float | None = Field(description="matched / (matched + not_matched)")
+
+
+class ValidationSummary(BaseModel):
+    as_of: datetime
+    last_validation_at: datetime | None
+    overall: VerdictBucket
+    by_indicator: dict[str, VerdictBucket]
+    by_severity: dict[str, VerdictBucket]
+    note: str
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "as_of": "2026-09-21T12:00:00Z",
+                    "last_validation_at": "2026-09-19T11:20:00Z",
+                    "overall": {
+                        "matched": 7,
+                        "not_matched": 2,
+                        "inconclusive": 1,
+                        "n": 10,
+                        "precision": 0.778,
+                    },
+                    "by_indicator": {
+                        "ndti_turbidity": {
+                            "matched": 5,
+                            "not_matched": 1,
+                            "inconclusive": 1,
+                            "n": 7,
+                            "precision": 0.833,
+                        }
+                    },
+                    "by_severity": {
+                        "high": {
+                            "matched": 4,
+                            "not_matched": 0,
+                            "inconclusive": 0,
+                            "n": 4,
+                            "precision": 1.0,
+                        },
+                        "medium": {
+                            "matched": 3,
+                            "not_matched": 2,
+                            "inconclusive": 1,
+                            "n": 6,
+                            "precision": 0.6,
+                        },
+                    },
+                    "note": "precision = matched / (matched + not_matched)",
+                }
+            ]
+        }
+    )
 
 
 class ValidationList(BaseModel):

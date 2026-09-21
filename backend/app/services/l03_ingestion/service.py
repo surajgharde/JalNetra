@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.core.storage import ObjectStore
 from app.db.models import Scene, SceneIngestion, WaterBody
@@ -186,6 +187,7 @@ def ingest_water_body(
     for scene in scenes:
         if not scene.usable:
             result.unusable.append(scene.id)
+            metrics.scenes_rejected_cloud.labels(stage="stac").inc()
             continue
         try:
             _row, did_work = ingest_scene(
@@ -196,6 +198,8 @@ def ingest_water_body(
             log.exception("scene ingest failed", extra={"scene_id": scene.id})
             raise
         (result.ingested if did_work else result.skipped).append(scene.id)
+        if did_work:
+            metrics.scenes_ingested.labels(source=scene.source).inc()
     return result
 
 

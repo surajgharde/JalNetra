@@ -14,6 +14,7 @@ from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    REAL,
     Date,
     DateTime,
     ForeignKey,
@@ -71,6 +72,42 @@ class Validation(Base):
     submitted_by: Mapped[str | None] = mapped_column(Text)
     verdict: Mapped[str | None] = mapped_column(Text)  # matched | not_matched | inconclusive (S11)
     verdict_reason: Mapped[str | None] = mapped_column(Text)
+    # Snapshot of the alert at submission, so precision is judged against what the
+    # officer actually saw even if the alert is later rescored or reassigned.
+    alert_severity: Mapped[str | None] = mapped_column(Text)
+    alert_indicator: Mapped[str | None] = mapped_column(Text)
+    alert_priority_score: Mapped[float | None] = mapped_column(REAL)
+    alert_observed_on: Mapped[date | None] = mapped_column(Date)
+    candidate_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("anomaly_candidates.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class BaselineSample(Base):
+    """Extra baseline observations fed back from field validation (S11).
+
+    A ``not_matched`` verdict says the water was normal on that date; the zone
+    mean the satellite saw then is therefore a *confirmed* normal value, and it
+    is added to the seasonal history so the band learns from it. L7's
+    ``load_history`` unions these rows with the hypertable.
+    """
+
+    __tablename__ = "baseline_samples"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("zones.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    indicator: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    value: Mapped[float] = mapped_column(REAL, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="validation")
+    validation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("validations.id", ondelete="CASCADE")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

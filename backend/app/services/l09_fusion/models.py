@@ -225,15 +225,15 @@ def train_xgboost(
     settings: Settings | None = None,
     activate: bool = False,
     version: str | None = None,
+    min_examples: int | None = None,
 ) -> PriorityModelRow:
     """Fit a regressor on validated outcomes, store it in MinIO, register it.
-    Refuses below ``priority_train_min_validations`` so the weighted model stays."""
+    Refuses below ``priority_train_min_validations`` (or ``min_examples`` when the
+    caller has already split off a hold-out set) so the weighted model stays."""
     settings = settings or get_settings()
-    if len(examples) < settings.priority_train_min_validations:
-        raise ValueError(
-            f"{len(examples)} labelled examples; training needs "
-            f"{settings.priority_train_min_validations}"
-        )
+    need = settings.priority_train_min_validations if min_examples is None else min_examples
+    if len(examples) < need:
+        raise ValueError(f"{len(examples)} labelled examples; training needs {need}")
     import xgboost as xgb  # lazy: optional extra
 
     x = np.vstack([e.features.as_array() for e in examples])
@@ -294,10 +294,11 @@ def train_xgboost(
 
 
 def load_validated_examples(session: Session) -> list[LabelledExample]:
-    """Labelled examples from field/lab validations. The ``validations`` table
-    lands in S11; until then there is nothing to learn from and this returns
-    an empty list, which keeps ``train_xgboost`` refusing."""
-    return []
+    """Labelled examples from field/lab validations (implemented by L13; imported
+    lazily because L13 depends on this module)."""
+    from app.services.l13_validation.training import load_validated_examples as impl
+
+    return impl(session)
 
 
 def weights_document() -> dict[str, Any]:

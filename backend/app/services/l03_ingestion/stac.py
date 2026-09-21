@@ -23,6 +23,7 @@ from pystac_client import Client
 from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
@@ -291,17 +292,23 @@ class ChainedSource:
         limit: int = 200,
     ) -> list[SceneCandidate]:
         last: Exception | None = None
-        for src in self.sources:
+        for i, src in enumerate(self.sources):
             try:
-                return src.search(
+                found = src.search(
                     geom, date_from, date_to, max_cloud_pct=max_cloud_pct, tiles=tiles, limit=limit
                 )
             except SourceError as exc:
                 last = exc
+                metrics.stac_request_failures.labels(source=src.name).inc()
                 log.warning(
                     "stac source failed, falling back",
                     extra={"source": src.name, "error": str(exc)},
                 )
+                continue
+            if i > 0:
+                metrics.stac_fallbacks.labels(served_by=src.name).inc()
+                log.info("stac search served by fallback", extra={"source": src.name})
+            return found
         assert last is not None
         raise last
 

@@ -1,0 +1,48 @@
+# Alerting rules (S12). Route them to a pager via Alertmanager in production.
+groups:
+  - name: jalnetra-pipeline
+    rules:
+      # The plan's headline rule: page if a Tier 1 water body has had no usable
+      # scene for 10 days. The gauge is refreshed by the beat task
+      # `refresh_ops_gauges`; a body that never had one reports 9999.
+      - alert: Tier1WaterBodyStale
+        expr: max by (water_body_id) (jalnetra_tier1_days_since_usable_scene) > 10
+        for: 1h
+        labels:
+          severity: page
+        annotations:
+          summary: "No usable scene for Tier 1 body {{ $labels.water_body_id }} in {{ $value }} days"
+          description: "Check STAC sources, cloud cover and the ingestion / processing queues."
+
+      - alert: StacPrimaryFailing
+        expr: increase(jalnetra_stac_request_failures_total[1h]) > 3
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "STAC source {{ $labels.source }} failing ({{ $value }} failures in 1h)"
+          description: "Fallback is automatic; scenes.source records who served each scene."
+
+      - alert: PipelineStageSlow
+        expr: histogram_quantile(0.95, sum by (le, stage) (rate(jalnetra_task_duration_seconds_bucket[30m]))) > 600
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "p95 duration of stage {{ $labels.stage }} above 10 minutes"
+
+      - alert: WorkerMetricsDown
+        expr: up{job="workers"} == 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Worker pool {{ $labels.instance }} is not serving metrics"
+
+      - alert: DispatchFailures
+        expr: increase(jalnetra_dispatches_total{status="failed"}[1h]) > 0
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Alert delivery failures on channel {{ $labels.channel }}"

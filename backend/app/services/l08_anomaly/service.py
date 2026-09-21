@@ -39,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.core.storage import ObjectStore
 from app.db.models import (
@@ -488,6 +489,8 @@ def detect_anomalies(
             n_flagged += verdict.severity is not None
             n_alertable += verdict.alertable
             n_gated += verdict.natural_cause_likely
+            if verdict.natural_cause_likely:
+                metrics.alerts_gated_rainfall.inc()
             if verdict.severity is not None:
                 log.info(
                     "anomaly candidate",

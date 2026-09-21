@@ -1,0 +1,405 @@
+{
+ "uid": "jalnetra-pipeline",
+ "title": "JalNetra pipeline",
+ "tags": [
+  "jalnetra"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "1m",
+ "time": {
+  "from": "now-7d",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Open alerts",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(jalnetra_open_alerts)",
+     "legendFormat": "open"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Stalest Tier 1 body (days)",
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "max(jalnetra_tier1_days_since_usable_scene < 9999)",
+     "legendFormat": "days"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "d"
+    }
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Baseline building zones",
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "jalnetra_baseline_building_zones",
+     "legendFormat": "zones"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Field validation precision",
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "jalnetra_validation_precision",
+     "legendFormat": "precision"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit"
+    }
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "STAC fallbacks (1h)",
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(increase(jalnetra_stac_fallbacks_total[1h]))",
+     "legendFormat": "fallbacks"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Dispatch failures (24h)",
+   "gridPos": {
+    "x": 20,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(increase(jalnetra_dispatches_total{status=\"failed\"}[24h]))",
+     "legendFormat": "failed"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Scenes ingested vs rejected for cloud (per hour)",
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate(jalnetra_scenes_ingested_total[1h]))*3600",
+     "legendFormat": "ingested"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(jalnetra_scenes_rejected_cloud_total{stage=\"stac\"}[1h]))*3600",
+     "legendFormat": "rejected @ STAC"
+    },
+    {
+     "refId": "C",
+     "expr": "sum(rate(jalnetra_scenes_rejected_cloud_total{stage=\"mask\"}[1h]))*3600",
+     "legendFormat": "rejected @ mask"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {}
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "Zones processed (per hour)",
+   "gridPos": {
+    "x": 12,
+    "y": 4,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate(jalnetra_zones_processed_total{outcome=\"accepted\"}[1h]))*3600",
+     "legendFormat": "accepted"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(jalnetra_zones_processed_total{outcome=\"rejected\"}[1h]))*3600",
+     "legendFormat": "rejected"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {}
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Alerts raised and gated by rainfall (per day)",
+   "gridPos": {
+    "x": 0,
+    "y": 12,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (severity) (increase(jalnetra_alerts_raised_total{action=\"created\"}[1d]))",
+     "legendFormat": "{{severity}}"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(increase(jalnetra_alerts_gated_rainfall_total[1d]))",
+     "legendFormat": "gated by rainfall"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {}
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Task duration p95 by stage",
+   "gridPos": {
+    "x": 12,
+    "y": 12,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(jalnetra_task_duration_seconds_bucket[30m])))",
+     "legendFormat": "{{stage}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    }
+   },
+   "options": {}
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "STAC request failures by source (per hour)",
+   "gridPos": {
+    "x": 0,
+    "y": 20,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (source) (rate(jalnetra_stac_request_failures_total[1h]))*3600",
+     "legendFormat": "{{source}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {}
+   },
+   "options": {}
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Days since last usable scene, Tier 1 bodies",
+   "gridPos": {
+    "x": 12,
+    "y": 20,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "jalnetra_tier1_days_since_usable_scene < 9999",
+     "legendFormat": "{{water_body_id}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "d"
+    }
+   },
+   "options": {}
+  }
+ ]
+}

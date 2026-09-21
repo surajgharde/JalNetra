@@ -14,6 +14,7 @@ from app.api.router import api_router, v1_router
 from app.core.cache import close_redis
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.observability import init_sentry
 from app.core.ratelimit import limiter
 from app.db.session import dispose_engine
 
@@ -31,6 +32,7 @@ DESCRIPTION = (
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
+    init_sentry("api", settings=settings)
     log.info("startup", extra={"env": settings.app_env, "version": __version__})
     yield
     await close_redis()

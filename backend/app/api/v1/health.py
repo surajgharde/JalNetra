@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from app import __version__
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.core.health import run_health_checks
 from app.schemas.health import HealthResponse
@@ -25,3 +27,9 @@ async def health(response: Response, settings: Settings = Depends(get_settings))
         env=settings.app_env,
         services=services,
     )
+
+
+@router.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Prometheus scrape target for the API process (workers serve their own)."""
+    return Response(content=metrics.render(), media_type=CONTENT_TYPE_LATEST)

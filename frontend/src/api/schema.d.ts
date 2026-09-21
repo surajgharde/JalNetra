@@ -328,16 +328,76 @@ export interface paths {
         };
         /**
          * List Validations
-         * @description Submitted validations, newest first, with their verdict when computed.
+         * @description Submitted validations, newest first, with their verdict.
          */
         get: operations["list_validations_api_v1_validations_get"];
         put?: never;
         /**
          * Create Validation
-         * @description Submit a field or lab result against an alert. The verdict (matched /
-         *     not_matched / inconclusive) is computed by the validation loop (S11).
+         * @description Submit a field or lab result against an alert. The verdict is computed
+         *     immediately (matched / not_matched / inconclusive), the alert's status is
+         *     updated, and a field-confirmed normal reading is fed back into the
+         *     seasonal baseline.
          */
         post: operations["create_validation_api_v1_validations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/validations/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Validation Summary
+         * @description Precision to date, overall and by indicator / severity band.
+         */
+        get: operations["validation_summary_api_v1_validations_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/validations/{validation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Validation */
+        get: operations["get_validation_api_v1_validations__validation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/validations/{validation_id}/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Photo */
+        get: operations["get_photo_api_v1_validations__validation_id__photo_get"];
+        put?: never;
+        /**
+         * Upload Photo
+         * @description Attach a site photo to a validation (stored in MinIO).
+         */
+        post: operations["upload_photo_api_v1_validations__validation_id__photo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -548,6 +608,14 @@ export interface components {
             note?: string | null;
             /** By */
             by?: string | null;
+        };
+        /** Body_upload_photo_api_v1_validations__validation_id__photo_post */
+        Body_upload_photo_api_v1_validations__validation_id__photo_post: {
+            /**
+             * File
+             * @description JPEG, PNG or WebP, up to 15 MB
+             */
+            file: string;
         };
         /** ContributionOut */
         ContributionOut: {
@@ -1199,7 +1267,29 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
-        /** ValidationOut */
+        /**
+         * ValidationOut
+         * @example {
+         *       "alert_id": "alr_2026_0917_khadakwasla_z3",
+         *       "alert_indicator": "ndti_turbidity",
+         *       "alert_observed_on": "2026-09-17",
+         *       "alert_priority_score": 72,
+         *       "alert_severity": "high",
+         *       "created_at": "2026-09-19T11:20:00Z",
+         *       "id": 12,
+         *       "lab_results": {
+         *         "ph": 7.6,
+         *         "tss_mg_l": 62,
+         *         "turbidity_ntu": 48
+         *       },
+         *       "observed_condition": "Brown plume near the eastern inlet, no odour.",
+         *       "photo_url": "/api/v1/validations/12/photo",
+         *       "sampled_on": "2026-09-19",
+         *       "submitted_by": "RO Pune field team",
+         *       "verdict": "matched",
+         *       "verdict_reason": "turbidity 48 NTU is at or above the threshold of 10 NTU"
+         *     }
+         */
         ValidationOut: {
             /** Id */
             id: number;
@@ -1224,11 +1314,100 @@ export interface components {
             verdict: ("matched" | "not_matched" | "inconclusive") | null;
             /** Verdict Reason */
             verdict_reason: string | null;
+            /** Alert Severity */
+            alert_severity?: string | null;
+            /** Alert Indicator */
+            alert_indicator?: string | null;
+            /** Alert Priority Score */
+            alert_priority_score?: number | null;
+            /** Alert Observed On */
+            alert_observed_on?: string | null;
+            /** Photo Url */
+            photo_url?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * ValidationSummary
+         * @example {
+         *       "as_of": "2026-09-21T12:00:00Z",
+         *       "by_indicator": {
+         *         "ndti_turbidity": {
+         *           "inconclusive": 1,
+         *           "matched": 5,
+         *           "n": 7,
+         *           "not_matched": 1,
+         *           "precision": 0.833
+         *         }
+         *       },
+         *       "by_severity": {
+         *         "high": {
+         *           "inconclusive": 0,
+         *           "matched": 4,
+         *           "n": 4,
+         *           "not_matched": 0,
+         *           "precision": 1
+         *         },
+         *         "medium": {
+         *           "inconclusive": 1,
+         *           "matched": 3,
+         *           "n": 6,
+         *           "not_matched": 2,
+         *           "precision": 0.6
+         *         }
+         *       },
+         *       "last_validation_at": "2026-09-19T11:20:00Z",
+         *       "note": "precision = matched / (matched + not_matched)",
+         *       "overall": {
+         *         "inconclusive": 1,
+         *         "matched": 7,
+         *         "n": 10,
+         *         "not_matched": 2,
+         *         "precision": 0.778
+         *       }
+         *     }
+         */
+        ValidationSummary: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Last Validation At */
+            last_validation_at: string | null;
+            overall: components["schemas"]["VerdictBucket"];
+            /** By Indicator */
+            by_indicator: {
+                [key: string]: components["schemas"]["VerdictBucket"];
+            };
+            /** By Severity */
+            by_severity: {
+                [key: string]: components["schemas"]["VerdictBucket"];
+            };
+            /** Note */
+            note: string;
+        };
+        /** VerdictBucket */
+        VerdictBucket: {
+            /** Matched */
+            matched: number;
+            /** Not Matched */
+            not_matched: number;
+            /** Inconclusive */
+            inconclusive: number;
+            /**
+             * N
+             * @default 0
+             */
+            n: number;
+            /**
+             * Precision
+             * @description matched / (matched + not_matched)
+             */
+            precision: number | null;
         };
         /**
          * WaterBodyDetail
@@ -2015,6 +2194,7 @@ export interface operations {
         parameters: {
             query?: {
                 alert_id?: string | null;
+                verdict?: string | null;
                 limit?: number;
                 cursor?: string | null;
             };
@@ -2059,6 +2239,121 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validation_summary_api_v1_validations_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationSummary"];
+                };
+            };
+        };
+    };
+    get_validation_api_v1_validations__validation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                validation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_photo_api_v1_validations__validation_id__photo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                validation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_photo_api_v1_validations__validation_id__photo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                validation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_photo_api_v1_validations__validation_id__photo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core import metrics
 from app.core.config import Settings, get_settings
 from app.core.storage import ObjectStore
 from app.db.models import (
@@ -379,6 +380,8 @@ def compute_indicators(
         run.n_zones = len(zones)
         run.n_observations = n_obs
         run.rejected = _rejection_dicts(rejected)
+        metrics.zones_processed.labels(outcome="accepted").inc(n_obs)
+        metrics.zones_processed.labels(outcome="rejected").inc(len(rejected))
         run.chips = chips
         run.boa_offset = settings.s2_boa_add_offset
     except Exception as exc:
