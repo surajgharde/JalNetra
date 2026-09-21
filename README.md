@@ -235,6 +235,45 @@ curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: applica
   default: a dev box logs `skipped` rows and never pages a regional office.
 - Worker queue `reporting` carries briefs and dispatches; compose already lists it.
 
+## Backend API and tile server (S9, L2)
+
+```sh
+uv run uvicorn app.main:app --reload         # then open http://localhost:8000/docs
+curl localhost:8000/api/v1/water-bodies?district=Pune
+curl localhost:8000/api/v1/water-bodies/wb_khadakwasla/series?indicator=ndti_turbidity&zone=wb_khadakwasla_z3&from=2026-01-01
+curl -X POST localhost:8000/api/v1/jobs/ingest -H 'content-type: application/json' -d '{"water_body_id":"wb_khadakwasla","date_from":"2026-09-01","date_to":"2026-09-21"}'
+curl localhost:8000/api/v1/jobs/<job_id>       # state, progress_pct, current_stage, per-stage counts
+curl -o t.png localhost:8000/tiles/turbidity/wb_khadakwasla/2026-09-17/13/5776/3651.png
+```
+
+Every endpoint of the frozen contract is mounted under `/api/v1` (plus
+`/tiles/...` and `/health`); `tests/test_api.py` asserts the inventory and that
+the demo-facing models carry `/docs` examples.
+
+- **Async throughout.** Handlers use the async engine; the read models in
+  `app/services/l02_api/` are sync SQLAlchemy executed through
+  `AsyncSession.run_sync`, so L7's baseline functions are reused verbatim and
+  the event loop never blocks.
+- **Cursor pagination** (`app/api/pagination.py`): opaque keyset cursors on
+  water bodies, observations, alerts, validations and jobs — `next_cursor`
+  in every list response.
+- **Redis cache** (`app/core/cache.py`): series and indicators cached 5 min
+  under a key that includes the body's latest scene id; fail-open on outage.
+  Responses carry `cached: true|false`.
+- **Jobs**: `POST /jobs/ingest` enqueues `ingest_water_body` (or the chunked
+  `backfill_history` for windows > 62 days) and returns a job id; `GET /jobs/{id}`
+  *derives* progress from the stage tables — scenes ingested / masked /
+  indicators / anomalies / scored — so retries and restarts never desync it.
+- **Tiles**: `/tiles/chip/{chip_key}/{z}/{x}/{y}.png` (what alert evidence
+  links carry) and `/tiles/{layer}/{water_body_id}/{date}/{z}/{x}/{y}.png`
+  proxy TiTiler with a fixed style per layer — turbidity amber (`ylorbr`),
+  chlorophyll green, algae yellow-green, sediment orange, extent blue, water
+  mask a single blue, anomaly red. `/tiles/styles` feeds the legend.
+- **Rate limiting** (slowapi): `RATE_LIMIT_DEFAULT` per client IP, a higher
+  `RATE_LIMIT_TILES` on tiles. **/health** now also probes the STAC source.
+- `validations` table + `POST/GET /validations` store field results now;
+  verdicts, photo upload and the precision summary land in S11.
+
 ## Status
 
 - [x] S0 — scaffold and infrastructure
@@ -246,7 +285,7 @@ curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: applica
 - [x] S6 — anomaly detection (L8)
 - [x] S7 — fusion, priority, explainability (L9 + L10)
 - [x] S8 — alerts and reports (L11 + L12)
-- [ ] S9 — API and tile server (L2)
+- [x] S9 — API and tile server (L2)
 - [ ] S10 — frontend (L1)
 - [ ] S11 — validation loop (L13)
 - [ ] S12 — scale and ops

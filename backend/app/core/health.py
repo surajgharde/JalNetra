@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 
+import httpx
 import redis.asyncio as aioredis
 from minio import Minio
 from sqlalchemy import text
@@ -41,10 +42,23 @@ async def check_minio(settings: Settings) -> None:
     await asyncio.to_thread(_probe)
 
 
+async def check_stac(settings: Settings) -> None:
+    """The configured STAC source answers its landing page (no search, no auth)."""
+    url = (
+        settings.earth_search_url
+        if settings.stac_source == "earth-search"
+        else settings.cdse_stac_url
+    )
+    async with httpx.AsyncClient(timeout=settings.health_check_timeout_s) as client:
+        r = await client.get(url, follow_redirects=True)
+        r.raise_for_status()
+
+
 CHECKS: dict[str, Check] = {
     "postgres": check_postgres,
     "redis": check_redis,
     "minio": check_minio,
+    "stac": check_stac,
 }
 
 

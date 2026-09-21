@@ -1,7 +1,7 @@
 /**
- * Single transport for the whole app. Components never call fetch directly.
- * With VITE_API_MOCK=true the request is routed to the in-process mock server
- * (src/api/mock) so the UI can be developed and demoed before S9 ships.
+ * Single transport for the whole app. Components never call fetch directly;
+ * they go through `api` (client.ts) which goes through `request` here.
+ * In dev, Vite proxies /api, /tiles and /health to the backend (vite.config.ts).
  */
 
 export class ApiError extends Error {
@@ -14,8 +14,6 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
-
-export const MOCK_ENABLED = import.meta.env.VITE_API_MOCK !== "false";
 
 export type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -36,12 +34,22 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+function detailOf(body: unknown, fallback: string): string {
+  if (body && typeof body === "object" && "detail" in body) {
+    const d = (body as { detail: unknown }).detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) {
+      return d
+        .map((e) => (e && typeof e === "object" && "msg" in e ? String((e as { msg: unknown }).msg) : ""))
+        .filter(Boolean)
+        .join("; ");
+    }
+  }
+  return fallback;
+}
+
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const url = buildUrl(path, opts.query);
-  if (MOCK_ENABLED) {
-    const { handle } = await import("./mock/server");
-    return handle<T>(opts.method ?? "GET", url, opts.body);
-  }
   const res = await fetch(url, {
     method: opts.method ?? "GET",
     headers: opts.body ? { "content-type": "application/json" } : undefined,
@@ -55,11 +63,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     } catch {
       /* non-JSON error body */
     }
-    const detail =
-      body && typeof body === "object" && "detail" in body
-        ? String((body as { detail: unknown }).detail)
-        : res.statusText;
-    throw new ApiError(res.status, detail || `HTTP ${res.status}`, body);
+    throw new ApiError(res.status, detailOf(body, res.statusText || `HTTP ${res.status}`), body);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

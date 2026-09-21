@@ -1,0 +1,4093 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "JalNetra",
+  "description": "Satellite-based water quality anomaly intelligence for Maharashtra.\n\n**Boundary:** the system detects *potential anomalies* in satellite-observable indicators and prioritises zones for ground investigation. It never claims to detect, prove or confirm pollution or contamination.",
+  "version": "0.1.0"
+ },
+ "paths": {
+  "/health": {
+   "get": {
+    "tags": [
+     "health"
+    ],
+    "summary": "Health",
+    "operationId": "health_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Service Unavailable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/tiles/chip/{chip}/{z}/{x}/{y}.png": {
+   "get": {
+    "tags": [
+     "tiles"
+    ],
+    "summary": "Chip Tile",
+    "operationId": "chip_tile_tiles_chip__chip___z___x___y__png_get",
+    "parameters": [
+     {
+      "name": "chip",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "URL-encoded MinIO object key of a COG chip",
+       "title": "Chip"
+      },
+      "description": "URL-encoded MinIO object key of a COG chip"
+     },
+     {
+      "name": "z",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Z"
+      }
+     },
+     {
+      "name": "x",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "X"
+      }
+     },
+     {
+      "name": "y",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Y"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/tiles/{layer}/{water_body_id}/{on}/{z}/{x}/{y}.png": {
+   "get": {
+    "tags": [
+     "tiles"
+    ],
+    "summary": "Layer Tile",
+    "description": "Body-scope chip of ``layer`` (``watermask``, ``ndti_turbidity``, ... or an alias\nsuch as ``turbidity``) for a water body on a date.",
+    "operationId": "layer_tile_tiles__layer___water_body_id___on___z___x___y__png_get",
+    "parameters": [
+     {
+      "name": "layer",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Layer"
+      }
+     },
+     {
+      "name": "water_body_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "on",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "title": "On"
+      }
+     },
+     {
+      "name": "z",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Z"
+      }
+     },
+     {
+      "name": "x",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "X"
+      }
+     },
+     {
+      "name": "y",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Y"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/tiles/styles": {
+   "get": {
+    "tags": [
+     "tiles"
+    ],
+    "summary": "Tile Styles",
+    "description": "The style applied per layer, for the legend.",
+    "operationId": "tile_styles_tiles_styles_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "type": "object",
+         "title": "Response Tile Styles Tiles Styles Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/water-bodies": {
+   "get": {
+    "tags": [
+     "water-bodies"
+    ],
+    "summary": "List Water Bodies",
+    "description": "Registered water bodies with tier, area, latest observation and status.",
+    "operationId": "list_water_bodies_api_v1_water_bodies_get",
+    "parameters": [
+     {
+      "name": "district",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "District"
+      }
+     },
+     {
+      "name": "tier",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "maximum": 3,
+         "minimum": 1
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Tier"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "minimum": 1,
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WaterBodyList"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/water-bodies/{water_body_id}": {
+   "get": {
+    "tags": [
+     "water-bodies"
+    ],
+    "summary": "Get Water Body",
+    "description": "Detail with the GeoJSON boundary and zone polygons.",
+    "operationId": "get_water_body_api_v1_water_bodies__water_body_id__get",
+    "parameters": [
+     {
+      "name": "water_body_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Water Body Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WaterBodyDetail"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/water-bodies/{water_body_id}/observations": {
+   "get": {
+    "tags": [
+     "water-bodies"
+    ],
+    "summary": "List Observations",
+    "description": "Available dates with cloud cover, usability and the stage each scene reached.",
+    "operationId": "list_observations_api_v1_water_bodies__water_body_id__observations_get",
+    "parameters": [
+     {
+      "name": "water_body_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObservationList"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/water-bodies/{water_body_id}/indicators": {
+   "get": {
+    "tags": [
+     "water-bodies"
+    ],
+    "summary": "Get Indicators",
+    "description": "Indicator values for the latest scene on/before ``date``, with the\nDOY-matched baseline and the deviation, per zone.",
+    "operationId": "get_indicators_api_v1_water_bodies__water_body_id__indicators_get",
+    "parameters": [
+     {
+      "name": "water_body_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "date",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "latest scene on or before this date; default today",
+       "title": "Date"
+      },
+      "description": "latest scene on or before this date; default today"
+     },
+     {
+      "name": "zone",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Zone"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/IndicatorsResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/water-bodies/{water_body_id}/series": {
+   "get": {
+    "tags": [
+     "water-bodies"
+    ],
+    "summary": "Get Series",
+    "description": "Zone time series for charting, each point with its seasonal band and z.",
+    "operationId": "get_series_api_v1_water_bodies__water_body_id__series_get",
+    "parameters": [
+     {
+      "name": "water_body_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "indicator",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "one of ndti_turbidity, ndci_chlorophyll, fai_algal, sediment_proxy, mndwi_extent",
+       "default": "ndti_turbidity",
+       "title": "Indicator"
+      },
+      "description": "one of ndti_turbidity, ndci_chlorophyll, fai_algal, sediment_proxy, mndwi_extent"
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "name": "zone",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "defaults to the body's first zone",
+       "title": "Zone"
+      },
+      "description": "defaults to the body's first zone"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts": {
+   "get": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "List Alerts",
+    "description": "Alert list, priority descending.",
+    "operationId": "list_alerts_api_v1_alerts_get",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "enum": [
+        "open",
+        "investigating",
+        "validated",
+        "dismissed",
+        "active",
+        "all"
+       ],
+       "type": "string",
+       "default": "active",
+       "title": "Status"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "low",
+          "medium",
+          "high"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "minimum severity",
+       "title": "Severity"
+      },
+      "description": "minimum severity"
+     },
+     {
+      "name": "min_priority",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number",
+       "maximum": 100,
+       "minimum": 0,
+       "default": 0,
+       "title": "Min Priority"
+      }
+     },
+     {
+      "name": "water_body_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "district",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "District"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "Offset"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AlertList"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts.geojson": {
+   "get": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "Alerts Geojson",
+    "description": "Open alerts as a FeatureCollection; ``priority_score`` in properties drives map styling.",
+    "operationId": "alerts_geojson_api_v1_alerts_geojson_get",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "enum": [
+        "open",
+        "investigating",
+        "validated",
+        "dismissed",
+        "active",
+        "all"
+       ],
+       "type": "string",
+       "default": "active",
+       "title": "Status"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "low",
+          "medium",
+          "high"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Severity"
+      }
+     },
+     {
+      "name": "min_priority",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number",
+       "maximum": 100,
+       "minimum": 0,
+       "default": 0,
+       "title": "Min Priority"
+      }
+     },
+     {
+      "name": "water_body_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "district",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "District"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 2000,
+       "minimum": 1,
+       "default": 1000,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GeoJSONFeatureCollection"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts/{alert_id}": {
+   "get": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "Get Alert",
+    "operationId": "get_alert_api_v1_alerts__alert_id__get",
+    "parameters": [
+     {
+      "name": "alert_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Alert Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AlertOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts/{alert_id}/geometry.geojson": {
+   "get": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "Get Alert Geometry",
+    "description": "The flagged area (plume polygon, or the zone when no plume was drawn).",
+    "operationId": "get_alert_geometry_api_v1_alerts__alert_id__geometry_geojson_get",
+    "parameters": [
+     {
+      "name": "alert_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Alert Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Alert Geometry Api V1 Alerts  Alert Id  Geometry Geojson Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts/{alert_id}/brief.pdf": {
+   "get": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "Get Brief",
+    "description": "The one-page investigation brief. Generated on first request if the\nworker has not produced it yet; ``force=true`` re-renders.",
+    "operationId": "get_brief_api_v1_alerts__alert_id__brief_pdf_get",
+    "parameters": [
+     {
+      "name": "alert_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Alert Id"
+      }
+     },
+     {
+      "name": "force",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Force"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/pdf": {}
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts/{alert_id}/status": {
+   "patch": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "Update Status",
+    "description": "Field workflow: open -> investigating -> validated | dismissed (any order is allowed;\nthe change is audited with who and why).",
+    "operationId": "update_status_api_v1_alerts__alert_id__status_patch",
+    "parameters": [
+     {
+      "name": "alert_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Alert Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AlertStatusUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AlertOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/alerts/{alert_id}/webhook-preview": {
+   "get": {
+    "tags": [
+     "alerts"
+    ],
+    "summary": "Webhook Preview",
+    "description": "Exactly what a webhook recipient receives (dry run; nothing is sent).",
+    "operationId": "webhook_preview_api_v1_alerts__alert_id__webhook_preview_get",
+    "parameters": [
+     {
+      "name": "alert_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Alert Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Webhook Preview Api V1 Alerts  Alert Id  Webhook Preview Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/validations": {
+   "post": {
+    "tags": [
+     "validations"
+    ],
+    "summary": "Create Validation",
+    "description": "Submit a field or lab result against an alert. The verdict (matched /\nnot_matched / inconclusive) is computed by the validation loop (S11).",
+    "operationId": "create_validation_api_v1_validations_post",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ValidationIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "validations"
+    ],
+    "summary": "List Validations",
+    "description": "Submitted validations, newest first, with their verdict when computed.",
+    "operationId": "list_validations_api_v1_validations_get",
+    "parameters": [
+     {
+      "name": "alert_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Alert Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationList"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/ingest": {
+   "post": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Create Ingest Job",
+    "description": "Enqueue ingestion for a water body and date range. Each ingested scene\nchains mask -> indicators -> anomalies -> scoring -> alerts on its own;\npoll ``GET /jobs/{id}`` for the live readout.",
+    "operationId": "create_ingest_job_api_v1_jobs_ingest_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/IngestJobRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs": {
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "List Jobs",
+    "operationId": "list_jobs_api_v1_jobs_get",
+    "parameters": [
+     {
+      "name": "water_body_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Water Body Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "minimum": 1,
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobList"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/{job_id}": {
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Get Job",
+    "description": "State, progress percent and the stage currently in flight.",
+    "operationId": "get_job_api_v1_jobs__job_id__get",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AlertContext": {
+    "properties": {
+     "rainfall_72h_mm": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rainfall 72H Mm"
+     },
+     "cloud_cover_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cloud Cover Pct"
+     },
+     "natural_cause_likely": {
+      "type": "boolean",
+      "title": "Natural Cause Likely"
+     },
+     "rainfall_percentile": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rainfall Percentile"
+     },
+     "gate_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Gate Reason"
+     },
+     "baseline_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Status"
+     },
+     "votes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Votes"
+     }
+    },
+    "type": "object",
+    "required": [
+     "rainfall_72h_mm",
+     "cloud_cover_pct",
+     "natural_cause_likely"
+    ],
+    "title": "AlertContext"
+   },
+   "AlertList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AlertListItem"
+      },
+      "type": "array",
+      "title": "Items"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "items",
+     "total",
+     "disclaimer"
+    ],
+    "title": "AlertList"
+   },
+   "AlertListItem": {
+    "properties": {
+     "alert_id": {
+      "type": "string",
+      "title": "Alert Id"
+     },
+     "water_body": {
+      "$ref": "#/components/schemas/WaterBodyRef"
+     },
+     "zone": {
+      "$ref": "#/components/schemas/ZoneRef"
+     },
+     "observed_on": {
+      "type": "string",
+      "format": "date",
+      "title": "Observed On"
+     },
+     "primary_indicator": {
+      "type": "string",
+      "title": "Primary Indicator"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high"
+      ],
+      "title": "Severity"
+     },
+     "confidence": {
+      "type": "number",
+      "title": "Confidence"
+     },
+     "priority_score": {
+      "type": "number",
+      "title": "Priority Score"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "open",
+       "investigating",
+       "validated",
+       "dismissed"
+      ],
+      "title": "Status"
+     },
+     "natural_cause_likely": {
+      "type": "boolean",
+      "title": "Natural Cause Likely"
+     },
+     "affected_area_km2": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Affected Area Km2"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary"
+     },
+     "n_observations": {
+      "type": "integer",
+      "title": "N Observations"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "alert_id",
+     "water_body",
+     "zone",
+     "observed_on",
+     "primary_indicator",
+     "severity",
+     "confidence",
+     "priority_score",
+     "status",
+     "natural_cause_likely",
+     "affected_area_km2",
+     "summary",
+     "n_observations",
+     "disclaimer"
+    ],
+    "title": "AlertListItem",
+    "description": "GET /api/v1/alerts - one row of the priority-descending list."
+   },
+   "AlertOut": {
+    "properties": {
+     "alert_id": {
+      "type": "string",
+      "title": "Alert Id"
+     },
+     "water_body": {
+      "$ref": "#/components/schemas/WaterBodyRef"
+     },
+     "zone": {
+      "$ref": "#/components/schemas/ZoneRef"
+     },
+     "observed_on": {
+      "type": "string",
+      "format": "date",
+      "title": "Observed On"
+     },
+     "affected_area_km2": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Affected Area Km2"
+     },
+     "primary_indicator": {
+      "type": "string",
+      "title": "Primary Indicator"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high"
+      ],
+      "title": "Severity"
+     },
+     "confidence": {
+      "type": "number",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence"
+     },
+     "priority_score": {
+      "type": "number",
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Priority Score"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "open",
+       "investigating",
+       "validated",
+       "dismissed"
+      ],
+      "title": "Status"
+     },
+     "indicators": {
+      "items": {
+       "$ref": "#/components/schemas/IndicatorReading"
+      },
+      "type": "array",
+      "title": "Indicators"
+     },
+     "explanation": {
+      "$ref": "#/components/schemas/Explanation"
+     },
+     "context": {
+      "$ref": "#/components/schemas/AlertContext"
+     },
+     "evidence": {
+      "$ref": "#/components/schemas/Evidence"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     },
+     "first_observed_on": {
+      "type": "string",
+      "format": "date",
+      "title": "First Observed On"
+     },
+     "n_observations": {
+      "type": "integer",
+      "title": "N Observations"
+     },
+     "peak_priority_score": {
+      "type": "number",
+      "title": "Peak Priority Score"
+     },
+     "peak_severity": {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high"
+      ],
+      "title": "Peak Severity"
+     },
+     "model_version": {
+      "type": "string",
+      "title": "Model Version"
+     },
+     "timeline": {
+      "items": {
+       "$ref": "#/components/schemas/TimelineEntry"
+      },
+      "type": "array",
+      "title": "Timeline"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "alert_id",
+     "water_body",
+     "zone",
+     "observed_on",
+     "affected_area_km2",
+     "primary_indicator",
+     "severity",
+     "confidence",
+     "priority_score",
+     "status",
+     "indicators",
+     "explanation",
+     "context",
+     "evidence",
+     "disclaimer",
+     "first_observed_on",
+     "n_observations",
+     "peak_priority_score",
+     "peak_severity",
+     "model_version",
+     "updated_at"
+    ],
+    "title": "AlertOut",
+    "description": "GET /api/v1/alerts/{id} - the full alert."
+   },
+   "AlertStatusUpdate": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "open",
+       "investigating",
+       "validated",
+       "dismissed"
+      ],
+      "title": "Status"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 2000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "by": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "By"
+     }
+    },
+    "type": "object",
+    "required": [
+     "status"
+    ],
+    "title": "AlertStatusUpdate"
+   },
+   "ContributionOut": {
+    "properties": {
+     "factor": {
+      "type": "string",
+      "title": "Factor"
+     },
+     "value": {
+      "type": "number",
+      "title": "Value"
+     },
+     "key": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Key"
+     },
+     "raw": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Raw"
+     },
+     "parts": {
+      "additionalProperties": {
+       "type": "number"
+      },
+      "type": "object",
+      "title": "Parts"
+     }
+    },
+    "type": "object",
+    "required": [
+     "factor",
+     "value"
+    ],
+    "title": "ContributionOut"
+   },
+   "Evidence": {
+    "properties": {
+     "baseline_composite_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Composite Url"
+     },
+     "current_observation_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Current Observation Url"
+     },
+     "anomaly_mask_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Anomaly Mask Url"
+     },
+     "current_scene_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Current Scene Id"
+     },
+     "reference_scene_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reference Scene Id"
+     },
+     "reference_observed_on": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reference Observed On"
+     },
+     "brief_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Brief Url"
+     }
+    },
+    "type": "object",
+    "required": [
+     "baseline_composite_url",
+     "current_observation_url",
+     "anomaly_mask_url"
+    ],
+    "title": "Evidence"
+   },
+   "Explanation": {
+    "properties": {
+     "summary": {
+      "type": "string",
+      "title": "Summary"
+     },
+     "contributions": {
+      "items": {
+       "$ref": "#/components/schemas/ContributionOut"
+      },
+      "type": "array",
+      "maxItems": 4,
+      "minItems": 4,
+      "title": "Contributions"
+     }
+    },
+    "type": "object",
+    "required": [
+     "summary",
+     "contributions"
+    ],
+    "title": "Explanation"
+   },
+   "Feature": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "const": "Feature",
+      "title": "Type",
+      "default": "Feature"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "geometry": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Geometry"
+     },
+     "properties": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Properties"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "geometry",
+     "properties"
+    ],
+    "title": "Feature"
+   },
+   "FeatureCollection": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "const": "FeatureCollection",
+      "title": "Type",
+      "default": "FeatureCollection"
+     },
+     "features": {
+      "items": {
+       "$ref": "#/components/schemas/Feature"
+      },
+      "type": "array",
+      "title": "Features"
+     }
+    },
+    "type": "object",
+    "required": [
+     "features"
+    ],
+    "title": "FeatureCollection"
+   },
+   "GeoJSONFeature": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "const": "Feature",
+      "title": "Type",
+      "default": "Feature"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "geometry": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Geometry"
+     },
+     "properties": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Properties"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "geometry",
+     "properties"
+    ],
+    "title": "GeoJSONFeature"
+   },
+   "GeoJSONFeatureCollection": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "const": "FeatureCollection",
+      "title": "Type",
+      "default": "FeatureCollection"
+     },
+     "features": {
+      "items": {
+       "$ref": "#/components/schemas/GeoJSONFeature"
+      },
+      "type": "array",
+      "title": "Features"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "features",
+     "disclaimer"
+    ],
+    "title": "GeoJSONFeatureCollection"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "HealthResponse": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "ok",
+       "degraded"
+      ],
+      "title": "Status"
+     },
+     "app": {
+      "type": "string",
+      "title": "App"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "env": {
+      "type": "string",
+      "title": "Env"
+     },
+     "services": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/ServiceStatus"
+      },
+      "type": "object",
+      "title": "Services"
+     }
+    },
+    "type": "object",
+    "required": [
+     "status",
+     "app",
+     "version",
+     "env",
+     "services"
+    ],
+    "title": "HealthResponse",
+    "examples": [
+     {
+      "app": "JalNetra",
+      "env": "dev",
+      "services": {
+       "minio": {
+        "latency_ms": 5.4,
+        "status": "ok"
+       },
+       "postgres": {
+        "latency_ms": 3.1,
+        "status": "ok"
+       },
+       "redis": {
+        "latency_ms": 0.8,
+        "status": "ok"
+       }
+      },
+      "status": "ok",
+      "version": "0.1.0"
+     }
+    ]
+   },
+   "IndicatorReading": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     },
+     "baseline_mean": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Mean"
+     },
+     "baseline_std": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Std"
+     },
+     "z_score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Z Score"
+     },
+     "deviation_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Deviation Pct"
+     },
+     "baseline_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Status"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "value",
+     "baseline_mean",
+     "baseline_std",
+     "z_score",
+     "deviation_pct"
+    ],
+    "title": "IndicatorReading"
+   },
+   "IndicatorsResponse": {
+    "properties": {
+     "water_body_id": {
+      "type": "string",
+      "title": "Water Body Id"
+     },
+     "requested_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Requested Date"
+     },
+     "scene_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scene Id"
+     },
+     "observed_on": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Observed On"
+     },
+     "zones": {
+      "items": {
+       "$ref": "#/components/schemas/ZoneIndicators"
+      },
+      "type": "array",
+      "title": "Zones"
+     },
+     "cached": {
+      "type": "boolean",
+      "title": "Cached"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "water_body_id",
+     "requested_date",
+     "scene_id",
+     "observed_on",
+     "zones",
+     "cached",
+     "disclaimer"
+    ],
+    "title": "IndicatorsResponse",
+    "examples": [
+     {
+      "cached": false,
+      "disclaimer": "Satellite-observed anomaly. Ground and laboratory testing recommended for validation.",
+      "observed_on": "2026-09-17",
+      "requested_date": "2026-09-17",
+      "scene_id": "S2C_43QCA_20260917_0_L2A",
+      "water_body_id": "wb_khadakwasla",
+      "zones": [
+       {
+        "indicators": [
+         {
+          "baseline_mean": 0.128,
+          "baseline_p10": 0.1,
+          "baseline_p90": 0.16,
+          "baseline_status": "usable",
+          "baseline_std": 0.021,
+          "deviation_pct": 143.8,
+          "display_name": "Turbidity (NDTI)",
+          "key": "ndti_turbidity",
+          "p90": 0.41,
+          "scientific_basis": "Red-to-green ratio; rises with sediment.",
+          "valid_pixel_pct": 91.9,
+          "value": 0.312,
+          "water_fraction_pct": 97.0,
+          "z_score": 8.76
+         }
+        ],
+        "rejected": [],
+        "zone_id": "wb_khadakwasla_z3",
+        "zone_name": "Eastern zone"
+       }
+      ]
+     }
+    ]
+   },
+   "IngestJobRequest": {
+    "properties": {
+     "water_body_id": {
+      "type": "string",
+      "title": "Water Body Id"
+     },
+     "date_from": {
+      "type": "string",
+      "format": "date",
+      "title": "Date From"
+     },
+     "date_to": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Date To",
+      "description": "defaults to date_from"
+     },
+     "requested_by": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Requested By"
+     }
+    },
+    "type": "object",
+    "required": [
+     "water_body_id",
+     "date_from"
+    ],
+    "title": "IngestJobRequest",
+    "examples": [
+     {
+      "date_from": "2026-09-01",
+      "date_to": "2026-09-21",
+      "water_body_id": "wb_khadakwasla"
+     }
+    ]
+   },
+   "JobList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/JobOut"
+      },
+      "type": "array",
+      "title": "Items"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "type": "object",
+    "required": [
+     "items",
+     "next_cursor"
+    ],
+    "title": "JobList"
+   },
+   "JobOut": {
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "title": "Job Id"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "water_body_id": {
+      "type": "string",
+      "title": "Water Body Id"
+     },
+     "date_from": {
+      "type": "string",
+      "format": "date",
+      "title": "Date From"
+     },
+     "date_to": {
+      "type": "string",
+      "format": "date",
+      "title": "Date To"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "running",
+       "done",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "progress_pct": {
+      "type": "number",
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "Progress Pct"
+     },
+     "current_stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Current Stage",
+      "description": "first stage with pending work; null when done"
+     },
+     "stages": {
+      "items": {
+       "$ref": "#/components/schemas/StageProgress"
+      },
+      "type": "array",
+      "title": "Stages"
+     },
+     "scenes_found": {
+      "type": "integer",
+      "title": "Scenes Found"
+     },
+     "scenes_usable": {
+      "type": "integer",
+      "title": "Scenes Usable"
+     },
+     "alerts_created": {
+      "type": "integer",
+      "title": "Alerts Created"
+     },
+     "celery_state": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Celery State"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "job_id",
+     "kind",
+     "water_body_id",
+     "date_from",
+     "date_to",
+     "status",
+     "progress_pct",
+     "current_stage",
+     "stages",
+     "scenes_found",
+     "scenes_usable",
+     "alerts_created",
+     "celery_state",
+     "error",
+     "created_at",
+     "updated_at",
+     "finished_at"
+    ],
+    "title": "JobOut",
+    "examples": [
+     {
+      "alerts_created": 1,
+      "celery_state": "SUCCESS",
+      "created_at": "2026-09-21T10:00:00Z",
+      "current_stage": "indicators",
+      "date_from": "2026-09-01",
+      "date_to": "2026-09-21",
+      "job_id": "job_3f9c2b7e4a5d4c1e9b8a7f6e5d4c3b2a",
+      "kind": "ingest",
+      "progress_pct": 58.3,
+      "scenes_found": 5,
+      "scenes_usable": 4,
+      "stages": [
+       {
+        "done": 4,
+        "pct": 100,
+        "stage": "ingestion",
+        "total": 4
+       },
+       {
+        "done": 4,
+        "pct": 100,
+        "stage": "mask",
+        "total": 4
+       },
+       {
+        "done": 2,
+        "pct": 50,
+        "stage": "indicators",
+        "total": 4
+       },
+       {
+        "done": 1,
+        "pct": 25,
+        "stage": "anomalies",
+        "total": 4
+       },
+       {
+        "done": 1,
+        "pct": 25,
+        "stage": "scoring",
+        "total": 4
+       },
+       {
+        "done": 1,
+        "pct": 25,
+        "stage": "alerts",
+        "total": 4
+       }
+      ],
+      "status": "running",
+      "updated_at": "2026-09-21T10:03:12Z",
+      "water_body_id": "wb_khadakwasla"
+     }
+    ]
+   },
+   "LabResults": {
+    "properties": {
+     "turbidity_ntu": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Turbidity Ntu"
+     },
+     "chlorophyll_ug_l": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chlorophyll Ug L"
+     },
+     "tss_mg_l": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tss Mg L"
+     },
+     "do_mg_l": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Do Mg L"
+     },
+     "ph": {
+      "anyOf": [
+       {
+        "type": "number",
+        "maximum": 14.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ph"
+     },
+     "temperature_c": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Temperature C"
+     },
+     "conductivity_us_cm": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Conductivity Us Cm"
+     }
+    },
+    "type": "object",
+    "title": "LabResults"
+   },
+   "LatestObservation": {
+    "properties": {
+     "scene_id": {
+      "type": "string",
+      "title": "Scene Id"
+     },
+     "observed_on": {
+      "type": "string",
+      "format": "date",
+      "title": "Observed On"
+     },
+     "cloud_pct": {
+      "type": "number",
+      "title": "Cloud Pct"
+     },
+     "usable": {
+      "type": "boolean",
+      "title": "Usable"
+     },
+     "stage": {
+      "type": "string",
+      "title": "Stage",
+      "description": "deepest stage reached: ingested|masked|indicators|anomalies|scored|alerted"
+     }
+    },
+    "type": "object",
+    "required": [
+     "scene_id",
+     "observed_on",
+     "cloud_pct",
+     "usable",
+     "stage"
+    ],
+    "title": "LatestObservation"
+   },
+   "ObservationItem": {
+    "properties": {
+     "scene_id": {
+      "type": "string",
+      "title": "Scene Id"
+     },
+     "observed_on": {
+      "type": "string",
+      "format": "date",
+      "title": "Observed On"
+     },
+     "sensed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Sensed At"
+     },
+     "platform": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Platform"
+     },
+     "cloud_pct": {
+      "type": "number",
+      "title": "Cloud Pct",
+      "description": "tile-level cloud cover from STAC"
+     },
+     "usable": {
+      "type": "boolean",
+      "title": "Usable",
+      "description": "mask verdict for this body (falls back to the tile flag)"
+     },
+     "valid_pixel_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Valid Pixel Pct",
+      "description": "cloud-free share over the body"
+     },
+     "water_extent_km2": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Water Extent Km2"
+     },
+     "stage": {
+      "type": "string",
+      "title": "Stage"
+     },
+     "source": {
+      "type": "string",
+      "title": "Source"
+     }
+    },
+    "type": "object",
+    "required": [
+     "scene_id",
+     "observed_on",
+     "sensed_at",
+     "platform",
+     "cloud_pct",
+     "usable",
+     "valid_pixel_pct",
+     "water_extent_km2",
+     "stage",
+     "source"
+    ],
+    "title": "ObservationItem",
+    "examples": [
+     {
+      "cloud_pct": 8.1,
+      "observed_on": "2026-09-17",
+      "platform": "sentinel-2c",
+      "scene_id": "S2C_43QCA_20260917_0_L2A",
+      "sensed_at": "2026-09-17T05:31:12Z",
+      "source": "earth-search",
+      "stage": "alerted",
+      "usable": true,
+      "valid_pixel_pct": 91.9,
+      "water_extent_km2": 17.2
+     }
+    ]
+   },
+   "ObservationList": {
+    "properties": {
+     "water_body_id": {
+      "type": "string",
+      "title": "Water Body Id"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ObservationItem"
+      },
+      "type": "array",
+      "title": "Items"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "type": "object",
+    "required": [
+     "water_body_id",
+     "items",
+     "total",
+     "next_cursor"
+    ],
+    "title": "ObservationList"
+   },
+   "SeriesPoint": {
+    "properties": {
+     "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Observed At"
+     },
+     "scene_id": {
+      "type": "string",
+      "title": "Scene Id"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value",
+      "description": "zone mean"
+     },
+     "p90": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "P90"
+     },
+     "valid_pixel_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Valid Pixel Pct"
+     },
+     "baseline_mean": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Mean"
+     },
+     "baseline_p10": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline P10"
+     },
+     "baseline_p90": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline P90"
+     },
+     "baseline_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Status"
+     },
+     "z_score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Z Score"
+     }
+    },
+    "type": "object",
+    "required": [
+     "observed_at",
+     "scene_id",
+     "value",
+     "p90",
+     "valid_pixel_pct",
+     "baseline_mean",
+     "baseline_p10",
+     "baseline_p90",
+     "baseline_status",
+     "z_score"
+    ],
+    "title": "SeriesPoint"
+   },
+   "SeriesResponse": {
+    "properties": {
+     "water_body_id": {
+      "type": "string",
+      "title": "Water Body Id"
+     },
+     "zone_id": {
+      "type": "string",
+      "title": "Zone Id"
+     },
+     "indicator": {
+      "type": "string",
+      "title": "Indicator"
+     },
+     "display_name": {
+      "type": "string",
+      "title": "Display Name"
+     },
+     "date_from": {
+      "type": "string",
+      "format": "date",
+      "title": "Date From"
+     },
+     "date_to": {
+      "type": "string",
+      "format": "date",
+      "title": "Date To"
+     },
+     "points": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "type": "array",
+      "title": "Points"
+     },
+     "baseline_status": {
+      "type": "string",
+      "title": "Baseline Status"
+     },
+     "baseline_usable_windows": {
+      "type": "integer",
+      "title": "Baseline Usable Windows"
+     },
+     "weekly": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Weekly",
+      "description": "continuous-aggregate weekly means"
+     },
+     "cached": {
+      "type": "boolean",
+      "title": "Cached"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "water_body_id",
+     "zone_id",
+     "indicator",
+     "display_name",
+     "date_from",
+     "date_to",
+     "points",
+     "baseline_status",
+     "baseline_usable_windows",
+     "cached",
+     "disclaimer"
+    ],
+    "title": "SeriesResponse",
+    "examples": [
+     {
+      "baseline_status": "usable",
+      "baseline_usable_windows": 366,
+      "cached": false,
+      "date_from": "2026-06-01",
+      "date_to": "2026-09-17",
+      "disclaimer": "Satellite-observed anomaly. Ground and laboratory testing recommended for validation.",
+      "display_name": "Turbidity (NDTI)",
+      "indicator": "ndti_turbidity",
+      "points": [
+       {
+        "baseline_mean": 0.128,
+        "baseline_p10": 0.1,
+        "baseline_p90": 0.16,
+        "baseline_status": "usable",
+        "observed_at": "2026-09-17T05:31:12Z",
+        "p90": 0.41,
+        "scene_id": "S2C_43QCA_20260917_0_L2A",
+        "valid_pixel_pct": 91.9,
+        "value": 0.312,
+        "z_score": 8.76
+       }
+      ],
+      "water_body_id": "wb_khadakwasla",
+      "weekly": [],
+      "zone_id": "wb_khadakwasla_z3"
+     }
+    ]
+   },
+   "ServiceStatus": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "ok",
+       "error"
+      ],
+      "title": "Status"
+     },
+     "latency_ms": {
+      "type": "number",
+      "minimum": 0.0,
+      "title": "Latency Ms"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     }
+    },
+    "type": "object",
+    "required": [
+     "status",
+     "latency_ms"
+    ],
+    "title": "ServiceStatus"
+   },
+   "StageProgress": {
+    "properties": {
+     "stage": {
+      "type": "string",
+      "title": "Stage"
+     },
+     "done": {
+      "type": "integer",
+      "title": "Done"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "pct": {
+      "type": "number",
+      "title": "Pct"
+     }
+    },
+    "type": "object",
+    "required": [
+     "stage",
+     "done",
+     "total",
+     "pct"
+    ],
+    "title": "StageProgress"
+   },
+   "TimelineEntry": {
+    "properties": {
+     "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Observed At"
+     },
+     "scene_id": {
+      "type": "string",
+      "title": "Scene Id"
+     },
+     "candidate_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Candidate Id"
+     },
+     "priority_score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Priority Score"
+     },
+     "severity": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Severity"
+     },
+     "confidence": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Confidence"
+     },
+     "alertable": {
+      "type": "boolean",
+      "title": "Alertable"
+     }
+    },
+    "type": "object",
+    "required": [
+     "observed_at",
+     "scene_id",
+     "candidate_id",
+     "priority_score",
+     "severity",
+     "confidence",
+     "alertable"
+    ],
+    "title": "TimelineEntry"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   },
+   "ValidationIn": {
+    "properties": {
+     "alert_id": {
+      "type": "string",
+      "title": "Alert Id"
+     },
+     "sampled_on": {
+      "type": "string",
+      "format": "date",
+      "title": "Sampled On"
+     },
+     "lab_results": {
+      "$ref": "#/components/schemas/LabResults"
+     },
+     "observed_condition": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 2000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Observed Condition"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 4000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notes"
+     },
+     "submitted_by": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Submitted By"
+     }
+    },
+    "type": "object",
+    "required": [
+     "alert_id",
+     "sampled_on"
+    ],
+    "title": "ValidationIn",
+    "examples": [
+     {
+      "alert_id": "alr_2026_0917_khadakwasla_z3",
+      "lab_results": {
+       "ph": 7.6,
+       "tss_mg_l": 62.0,
+       "turbidity_ntu": 48.0
+      },
+      "observed_condition": "Brown plume near the eastern inlet, no odour.",
+      "sampled_on": "2026-09-19",
+      "submitted_by": "RO Pune field team"
+     }
+    ]
+   },
+   "ValidationList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationOut"
+      },
+      "type": "array",
+      "title": "Items"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "type": "object",
+    "required": [
+     "items",
+     "total",
+     "next_cursor"
+    ],
+    "title": "ValidationList"
+   },
+   "ValidationOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "alert_id": {
+      "type": "string",
+      "title": "Alert Id"
+     },
+     "sampled_on": {
+      "type": "string",
+      "format": "date",
+      "title": "Sampled On"
+     },
+     "lab_results": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Lab Results"
+     },
+     "observed_condition": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Observed Condition"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notes"
+     },
+     "submitted_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Submitted By"
+     },
+     "verdict": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "matched",
+         "not_matched",
+         "inconclusive"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verdict"
+     },
+     "verdict_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verdict Reason"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "alert_id",
+     "sampled_on",
+     "lab_results",
+     "observed_condition",
+     "notes",
+     "submitted_by",
+     "verdict",
+     "verdict_reason",
+     "created_at"
+    ],
+    "title": "ValidationOut"
+   },
+   "WaterBodyDetail": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "district": {
+      "type": "string",
+      "title": "District"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "tier": {
+      "type": "integer",
+      "title": "Tier"
+     },
+     "area_km2": {
+      "type": "number",
+      "title": "Area Km2"
+     },
+     "centroid": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Centroid",
+      "description": "[lon, lat]"
+     },
+     "bbox": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Bbox",
+      "description": "[minlon, minlat, maxlon, maxlat]"
+     },
+     "n_zones": {
+      "type": "integer",
+      "title": "N Zones"
+     },
+     "latest_observation": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LatestObservation"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "normal",
+       "watch",
+       "alert",
+       "baseline_building",
+       "no_data"
+      ],
+      "title": "Status"
+     },
+     "open_alerts": {
+      "type": "integer",
+      "title": "Open Alerts"
+     },
+     "max_open_severity": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Max Open Severity"
+     },
+     "baseline_status": {
+      "type": "string",
+      "enum": [
+       "usable",
+       "building",
+       "none"
+      ],
+      "title": "Baseline Status"
+     },
+     "mgrs_tiles": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Mgrs Tiles"
+     },
+     "source": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source"
+     },
+     "boundary": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Boundary",
+      "description": "GeoJSON MultiPolygon, EPSG:4326"
+     },
+     "zones": {
+      "$ref": "#/components/schemas/FeatureCollection"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "district",
+     "kind",
+     "tier",
+     "area_km2",
+     "centroid",
+     "bbox",
+     "n_zones",
+     "latest_observation",
+     "status",
+     "open_alerts",
+     "max_open_severity",
+     "baseline_status",
+     "mgrs_tiles",
+     "source",
+     "boundary",
+     "zones",
+     "disclaimer"
+    ],
+    "title": "WaterBodyDetail",
+    "examples": [
+     {
+      "area_km2": 18.4,
+      "baseline_status": "usable",
+      "bbox": [
+       73.72,
+       18.4,
+       73.82,
+       18.47
+      ],
+      "centroid": [
+       73.7712,
+       18.4419
+      ],
+      "district": "Pune",
+      "id": "wb_khadakwasla",
+      "kind": "reservoir",
+      "latest_observation": {
+       "cloud_pct": 8.1,
+       "observed_on": "2026-09-17",
+       "scene_id": "S2C_43QCA_20260917_0_L2A",
+       "stage": "alerted",
+       "usable": true
+      },
+      "max_open_severity": "high",
+      "n_zones": 6,
+      "name": "Khadakwasla Reservoir",
+      "open_alerts": 1,
+      "status": "alert",
+      "tier": 1
+     }
+    ]
+   },
+   "WaterBodyList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WaterBodyListItem"
+      },
+      "type": "array",
+      "title": "Items"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "type": "object",
+    "required": [
+     "items",
+     "total",
+     "next_cursor"
+    ],
+    "title": "WaterBodyList"
+   },
+   "WaterBodyListItem": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "district": {
+      "type": "string",
+      "title": "District"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "tier": {
+      "type": "integer",
+      "title": "Tier"
+     },
+     "area_km2": {
+      "type": "number",
+      "title": "Area Km2"
+     },
+     "centroid": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Centroid",
+      "description": "[lon, lat]"
+     },
+     "bbox": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Bbox",
+      "description": "[minlon, minlat, maxlon, maxlat]"
+     },
+     "n_zones": {
+      "type": "integer",
+      "title": "N Zones"
+     },
+     "latest_observation": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LatestObservation"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "normal",
+       "watch",
+       "alert",
+       "baseline_building",
+       "no_data"
+      ],
+      "title": "Status"
+     },
+     "open_alerts": {
+      "type": "integer",
+      "title": "Open Alerts"
+     },
+     "max_open_severity": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Max Open Severity"
+     },
+     "baseline_status": {
+      "type": "string",
+      "enum": [
+       "usable",
+       "building",
+       "none"
+      ],
+      "title": "Baseline Status"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "district",
+     "kind",
+     "tier",
+     "area_km2",
+     "centroid",
+     "bbox",
+     "n_zones",
+     "latest_observation",
+     "status",
+     "open_alerts",
+     "max_open_severity",
+     "baseline_status"
+    ],
+    "title": "WaterBodyListItem",
+    "examples": [
+     {
+      "area_km2": 18.4,
+      "baseline_status": "usable",
+      "bbox": [
+       73.72,
+       18.4,
+       73.82,
+       18.47
+      ],
+      "centroid": [
+       73.7712,
+       18.4419
+      ],
+      "district": "Pune",
+      "id": "wb_khadakwasla",
+      "kind": "reservoir",
+      "latest_observation": {
+       "cloud_pct": 8.1,
+       "observed_on": "2026-09-17",
+       "scene_id": "S2C_43QCA_20260917_0_L2A",
+       "stage": "alerted",
+       "usable": true
+      },
+      "max_open_severity": "high",
+      "n_zones": 6,
+      "name": "Khadakwasla Reservoir",
+      "open_alerts": 1,
+      "status": "alert",
+      "tier": 1
+     }
+    ]
+   },
+   "WaterBodyRef": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "district": {
+      "type": "string",
+      "title": "District"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "district"
+    ],
+    "title": "WaterBodyRef"
+   },
+   "ZoneIndicator": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "display_name": {
+      "type": "string",
+      "title": "Display Name"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     },
+     "p90": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "P90"
+     },
+     "baseline_mean": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Mean"
+     },
+     "baseline_std": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Std"
+     },
+     "baseline_p10": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline P10"
+     },
+     "baseline_p90": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline P90"
+     },
+     "baseline_status": {
+      "type": "string",
+      "title": "Baseline Status"
+     },
+     "z_score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Z Score"
+     },
+     "deviation_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Deviation Pct"
+     },
+     "valid_pixel_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Valid Pixel Pct"
+     },
+     "water_fraction_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Water Fraction Pct"
+     },
+     "scientific_basis": {
+      "type": "string",
+      "title": "Scientific Basis"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "display_name",
+     "value",
+     "p90",
+     "baseline_mean",
+     "baseline_std",
+     "baseline_p10",
+     "baseline_p90",
+     "baseline_status",
+     "z_score",
+     "deviation_pct",
+     "valid_pixel_pct",
+     "water_fraction_pct",
+     "scientific_basis"
+    ],
+    "title": "ZoneIndicator"
+   },
+   "ZoneIndicators": {
+    "properties": {
+     "zone_id": {
+      "type": "string",
+      "title": "Zone Id"
+     },
+     "zone_name": {
+      "type": "string",
+      "title": "Zone Name"
+     },
+     "indicators": {
+      "items": {
+       "$ref": "#/components/schemas/ZoneIndicator"
+      },
+      "type": "array",
+      "title": "Indicators"
+     },
+     "rejected": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Rejected",
+      "description": "zone-indicator records L6 refused, with reason"
+     }
+    },
+    "type": "object",
+    "required": [
+     "zone_id",
+     "zone_name",
+     "indicators"
+    ],
+    "title": "ZoneIndicators"
+   },
+   "ZoneRef": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "centroid": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Centroid",
+      "description": "[lon, lat]"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "centroid"
+    ],
+    "title": "ZoneRef"
+   }
+  }
+ }
+}

@@ -4,6 +4,7 @@ helpers, dispatch signing / e-mail rendering, contract schema."""
 from __future__ import annotations
 
 import base64
+import contextlib
 import re
 import zlib
 from datetime import UTC, date, datetime, timedelta
@@ -15,6 +16,7 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from app.core.config import Settings
 from app.schemas.alerts import AlertOut
+from app.services.l10_explain.explain import DISCLAIMER
 from app.services.l11_alerts.assembler import _append_timeline, alert_id_for, slug
 from app.services.l11_alerts.evidence import tile_url
 from app.services.l12_delivery.brief import BriefData, ChipImage, render_pdf
@@ -192,10 +194,8 @@ def _pdf_text(pdf: bytes) -> str:
                 raw = base64.a85decode(raw, adobe=True)
             except ValueError:
                 continue
-        try:
+        with contextlib.suppress(zlib.error):
             raw = zlib.decompress(raw)
-        except zlib.error:
-            pass
         for lit in re.findall(rb"\(((?:\\.|[^\\)])*)\)\s*T[jJ]", raw):
             out.append(lit.replace(b"\\(", b"(").replace(b"\\)", b")").decode("latin-1", "ignore"))
     return " ".join(out)
@@ -306,7 +306,7 @@ def _alert_out() -> AlertOut:
                 "current_observation_url": "/tiles/chip/y/{z}/{x}/{y}.png",
                 "anomaly_mask_url": "/api/v1/alerts/alr_2026_0917_khadakwasla_z3/geometry.geojson",
             },
-            "disclaimer": "Satellite-observed anomaly. Ground and laboratory testing recommended for validation.",
+            "disclaimer": DISCLAIMER,
             "first_observed_on": "2026-09-12",
             "n_observations": 2,
             "peak_priority_score": 74,

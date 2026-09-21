@@ -148,6 +148,13 @@ class Settings(BaseSettings):
     smtp_from: str = "jalnetra@localhost"
     smtp_starttls: bool = True
 
+    # --- API (L2) ---
+    api_cache_ttl_s: int = 300  # Redis TTL for series / indicator responses
+    api_cache_enabled: bool = True
+    rate_limit_default: str = "240/minute"  # slowapi syntax, per client IP
+    rate_limit_tiles: str = "2000/minute"
+    tile_cache_max_age_s: int = 3600  # Cache-Control on proxied tiles (chips are immutable)
+
     # --- Health ---
     health_check_timeout_s: float = 3.0
 
