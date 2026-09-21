@@ -8,6 +8,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# rasterio/GDAL wheels link against the system libexpat, which python:slim omits.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install dependencies first so source edits do not bust the layer cache.

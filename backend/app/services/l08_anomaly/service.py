@@ -27,6 +27,7 @@ to be ``done``; a scene L6 skipped (mask unusable) gets a ``skipped`` run.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -267,6 +268,23 @@ def _load_spatial_inputs(
 # --- persistence ----------------------------------------------------------------
 
 
+def json_safe(obj: Any) -> Any:
+    """Recursively turn NaN/inf (and numpy scalars) into JSON-legal values.
+    Postgres ``json`` rejects the ``NaN`` token, and a scene with no history
+    produces NaN z-scores on every detector."""
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    if isinstance(obj, (float, np.floating)):
+        return float(obj) if math.isfinite(obj) else None
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
+
+
 def upsert_candidate(
     session: Session,
     *,
@@ -277,7 +295,7 @@ def upsert_candidate(
     rainfall_72h: float | None,
 ) -> None:
     geom = union_geom(verdict.spatial)
-    row = {
+    row: dict[str, Any] = {
         "water_body_id": wb.id,
         "zone_id": verdict.zone_id,
         "scene_id": scene.id,
@@ -304,6 +322,7 @@ def upsert_candidate(
         "suppressed_reason": verdict.suppressed_reason,
         "updated_at": datetime.now(UTC),
     }
+    row = {k: (v if k == "spatial_geom" else json_safe(v)) for k, v in row.items()}
     stmt = insert(AnomalyCandidate).values(row)
     stmt = stmt.on_conflict_do_update(
         index_elements=[AnomalyCandidate.zone_id, AnomalyCandidate.scene_id],
@@ -515,7 +534,12 @@ def detect_anomalies(
     except Exception as exc:
         run.status = "failed"
         run.error = f"{type(exc).__name__}: {exc}"[:2000]
-        session.flush()
+        try:
+            session.flush()
+        except Exception:
+            # A DB error aborted the transaction; surface the original cause, not
+            # the follow-on InFailedSqlTransaction.
+            session.rollback()
         raise
 
     run.status = "done"

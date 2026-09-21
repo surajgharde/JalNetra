@@ -126,6 +126,8 @@ services:
     ports:
       - "8001:8000"
     environment:
+      # Newer titiler images default to port 80; keep 8000 so TITILER_URL and the 8001 mapping hold.
+      PORT: "8000"
       # Point GDAL/rasterio at MinIO for s3:// COG chips.
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-jalnetra}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-jalnetra123}

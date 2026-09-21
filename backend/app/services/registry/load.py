@@ -113,7 +113,7 @@ def build_records(
         try:
             mp = as_multipolygon(geom)
         except ValueError:
-            log.warning("skipping non-polygon feature", extra={"name": props.get("name")})
+            log.warning("skipping non-polygon feature", extra={"feature_name": props.get("name")})
             continue
 
         name = _str(props.get("name")) or _str(props.get("name_en"))

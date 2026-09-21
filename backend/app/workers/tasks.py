@@ -334,7 +334,7 @@ def assemble_alerts(self: Task, water_body_id: str, scene_id: str) -> dict[str, 
     payload = {
         "water_body_id": water_body_id,
         "scene_id": scene_id,
-        "created": result.created,
+        "alerts_created": result.created,
         "updated": result.updated,
         "escalated": result.escalated,
         "appended": result.appended,
@@ -438,7 +438,7 @@ def process_alerts(
     payload = {
         "water_body_id": water_body_id,
         "scenes": len(scenes),
-        "created": created,
+        "alerts_created": created,
         "updated": sorted(set(updated)),
     }
     log.info("process alerts done", extra=payload)

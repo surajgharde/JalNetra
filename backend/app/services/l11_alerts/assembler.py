@@ -307,7 +307,7 @@ def assemble_scene(
         extra={
             "water_body_id": wb.id,
             "scene_id": scene.id,
-            "created": result.created,
+            "alerts_created": result.created,
             "updated": len(result.updated),
             "escalated": result.escalated,
             "appended": len(result.appended),

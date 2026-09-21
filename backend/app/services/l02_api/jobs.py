@@ -124,6 +124,16 @@ def stage_counts(session: Session, job: Job) -> tuple[list[StageCount], int, int
         WaterMaskRecord.scene_id.in_(usable),
         WaterMaskRecord.status == "done",
     )
+    # A mask that is too cloudy over the body ends the pipeline for that scene
+    # (L6 is never enqueued), so it counts as finished for every later stage.
+    mask_unusable = _count(
+        session,
+        WaterMaskRecord.scene_id,
+        WaterMaskRecord.water_body_id == wb,
+        WaterMaskRecord.scene_id.in_(usable),
+        WaterMaskRecord.status == "done",
+        WaterMaskRecord.usable.is_(False),
+    )
     indicators = _count(
         session,
         IndicatorRun.scene_id,
@@ -162,9 +172,9 @@ def stage_counts(session: Session, job: Job) -> tuple[list[StageCount], int, int
     counts = [
         StageCount("ingestion", min(ingested, n), n),
         StageCount("mask", min(masked, n), n),
-        StageCount("indicators", min(indicators, n), n),
-        StageCount("anomalies", min(anomalies, n), n),
-        StageCount("scoring", min(scored + skipped_anom, n), n),
+        StageCount("indicators", min(indicators + mask_unusable, n), n),
+        StageCount("anomalies", min(anomalies + mask_unusable, n), n),
+        StageCount("scoring", min(scored + skipped_anom + mask_unusable, n), n),
     ]
     return counts, len(all_ids), n, alerts
 
