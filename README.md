@@ -381,18 +381,4 @@ docker compose run --rm api python -m app.cli ops-gauges
   upgrade/downgrade round-trip against TimescaleDB+PostGIS, frontend
   `tsc`+`vite build`, and a backend image build.
 
-## Status
 
-- [x] S0 — scaffold and infrastructure
-- [x] S1 — water body registry
-- [x] S2 — satellite ingestion (L3)
-- [x] S3 — preprocessing and water mask (L4 + L5)
-- [x] S4 — spectral indicators (L6)
-- [x] S5 — baseline + rainfall (L7)
-- [x] S6 — anomaly detection (L8)
-- [x] S7 — fusion, priority, explainability (L9 + L10)
-- [x] S8 — alerts and reports (L11 + L12)
-- [x] S9 — API and tile server (L2)
-- [x] S10 — frontend (L1)
-- [x] S11 — validation loop (L13)
-- [x] S12 — scale and ops
