@@ -29,6 +29,18 @@ celery_app.conf.update(
         "app.workers.tasks.poll_tier1_scenes": {"queue": "ingestion"},
         "app.workers.tasks.compute_water_mask": {"queue": "processing"},
         "app.workers.tasks.process_water_body": {"queue": "processing"},
+        "app.workers.tasks.compute_indicators": {"queue": "processing"},
+        "app.workers.tasks.process_indicators": {"queue": "processing"},
+        "app.workers.tasks.detect_anomalies": {"queue": "processing"},
+        "app.workers.tasks.process_anomalies": {"queue": "processing"},
+        "app.workers.tasks.score_candidates": {"queue": "processing"},
+        "app.workers.tasks.process_scores": {"queue": "processing"},
+        "app.workers.tasks.train_priority_model": {"queue": "processing"},
+        "app.workers.tasks.build_baselines": {"queue": "processing"},
+        "app.workers.tasks.rebuild_all_baselines": {"queue": "processing"},
+        "app.workers.tasks.sync_rainfall": {"queue": "ingestion"},
+        "app.workers.tasks.sync_rainfall_all": {"queue": "ingestion"},
+        "app.workers.tasks.backfill_history": {"queue": "ingestion"},
     },
     beat_schedule={
         "heartbeat-every-5-min": {
@@ -39,6 +51,17 @@ celery_app.conf.update(
         "poll-tier1-scenes-every-6h": {
             "task": "app.workers.tasks.poll_tier1_scenes",
             "schedule": crontab(minute="15", hour="*/6"),
+        },
+        # Open-Meteo's archive lands with a ~5 day lag; one pull a day at 02:30 UTC
+        # (08:00 IST) refreshes the lookback window for every body.
+        "sync-rainfall-daily": {
+            "task": "app.workers.tasks.sync_rainfall_all",
+            "schedule": crontab(minute="30", hour="2"),
+        },
+        # Baselines only move as history accrues, so a nightly rebuild is enough.
+        "rebuild-baselines-nightly": {
+            "task": "app.workers.tasks.rebuild_all_baselines",
+            "schedule": crontab(minute="0", hour="3"),
         },
     },
 )

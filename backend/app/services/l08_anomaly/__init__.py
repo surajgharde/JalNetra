@@ -1,1 +1,1 @@
-"""L8 Anomaly detection: temporal, spatial and multivariate detectors (S6)."""
+"""L8: three-detector anomaly candidates with the mandatory rainfall gate."""

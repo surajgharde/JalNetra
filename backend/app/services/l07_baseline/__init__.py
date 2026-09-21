@@ -1,1 +1,1 @@
-"""L7 Data and baseline: seasonal robust baselines and rainfall covariate (S5)."""
+"""L7: seasonal baselines (robust DOY windows) and the rainfall covariate."""

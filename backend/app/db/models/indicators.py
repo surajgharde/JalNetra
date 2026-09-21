@@ -10,11 +10,11 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    REAL,
     DateTime,
     Float,
     ForeignKey,
     Integer,
-    REAL,
     Text,
     UniqueConstraint,
     func,

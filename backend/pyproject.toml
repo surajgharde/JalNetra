@@ -31,6 +31,14 @@ dependencies = [
     "scipy>=1.13",
 ]
 
+[project.optional-dependencies]
+# Learned priority model (S7). The weighted model needs neither; install with
+# `uv sync --extra ml` once >= 50 validations exist and you want to train.
+ml = [
+    "xgboost>=2.0",
+    "shap>=0.46",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",
@@ -61,7 +69,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*"]
+module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

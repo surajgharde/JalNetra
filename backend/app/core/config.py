@@ -68,6 +68,68 @@ class Settings(BaseSettings):
     chip_prefix: str = "chips"  # MinIO key prefix for COG chips
     mask_after_ingest: bool = True  # ingest task enqueues compute_water_mask for new scenes
 
+    # --- Spectral indicators (L6) ---
+    # L2A DN = (reflectance + 0.1) * 10000 for processing baseline >= 04.00 (all scenes
+    # since Jan 2022 and the reprocessed archive). Set 0 for legacy pre-2022 products.
+    s2_boa_add_offset: int = -1000
+    indicator_min_valid_pct: float = 30.0  # reject a zone record below this cloud-free share
+    indicator_min_pixels: int = 25  # ... or with fewer aggregated pixels than this
+    indicators_after_mask: bool = True  # mask task enqueues compute_indicators when usable
+
+    # --- Seasonal baseline + rainfall covariate (L7) ---
+    baseline_window_days: int = 30  # DOY window width, centred on each day-of-year
+    baseline_min_samples: int = 5  # below this a window is "building" and alerts are suppressed
+    baseline_min_history_days_tier1: int = 730  # Tier 1 needs 2 years of history to be usable
+    baseline_min_history_days: int = 365  # Tier 2/3
+    baseline_history_years: int = 3  # default span of the bulk historical backfill
+    baseline_backfill_chunk_days: int = 31  # one ingest task per chunk of the backfill window
+    open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1/archive"
+    open_meteo_forecast_url: str = "https://api.open-meteo.com/v1/forecast"
+    open_meteo_timeout_s: float = 30.0
+    rainfall_archive_lag_days: int = 5  # ERA5 archive trails real time by ~5 days
+    rainfall_lookback_days: int = 10  # daily job re-fetches this many days (covers the lag)
+    rainfall_history_start: str = "2017-01-01"  # earliest day the bulk rainfall backfill fetches
+
+    # --- Anomaly detection (L8) ---
+    anomaly_z_threshold: float = 3.0  # |robust z| above this flags an indicator
+    anomaly_z_high: float = 5.0  # ... and above this a single detector already means "high"
+    # Sigma floor per indicator: a zone whose history is nearly constant would
+    # otherwise turn measurement noise into a huge z. Roughly 1 x sensor noise.
+    anomaly_sigma_floor: dict[str, float] = Field(
+        default_factory=lambda: {
+            "ndti_turbidity": 0.02,
+            "ndci_chlorophyll": 0.02,
+            "fai_algal": 0.005,
+            "sediment_proxy": 0.005,
+            "mndwi_extent": 0.05,
+        }
+    )
+    spatial_enabled: bool = True
+    spatial_pixel_z: float = 3.0  # per-pixel robust z (within-scene) above which a pixel is "hot"
+    spatial_eps_px: float = 3.0  # DBSCAN neighbourhood radius in pixels
+    spatial_min_samples: int = 10  # DBSCAN core-point minimum
+    spatial_min_area_km2: float = 0.05  # cluster area below this is not a spatial anomaly
+    spatial_max_hot_fraction: float = (
+        0.30  # more hot water than this is a body-wide shift, not a plume
+    )
+    spatial_max_hot_pixels: int = 200_000  # DBSCAN guard at very large bodies
+    multivariate_min_history: int = 20  # scenes needed before IsolationForest is fitted
+    multivariate_contamination: float = 0.05
+    multivariate_seed: int = 42
+    rainfall_gate_window_days: int = 30  # DOY window for the historical mm_72h p90
+    rainfall_gate_min_history: int = (
+        30  # days of rainfall history in the window before the gate can fire
+    )
+    anomalies_after_indicators: bool = True  # indicator task enqueues detect_anomalies
+
+    # --- Fusion, priority, explainability (L9 + L10) ---
+    priority_model_prefix: str = "models/priority"  # MinIO prefix for trained boosters
+    priority_train_min_validations: int = (
+        50  # below this, training refuses and the weighted model stays
+    )
+    priority_z_saturation: float = 5.0  # a temporal z of this or more counts as a full deviation
+    score_after_anomalies: bool = True  # detect_anomalies enqueues score_candidates
+
     # --- Health ---
     health_check_timeout_s: float = 3.0
 

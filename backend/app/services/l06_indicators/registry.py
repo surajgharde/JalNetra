@@ -229,7 +229,8 @@ class MNDWIExtent(Indicator):
         "and refill. Each observation also carries the zone's visible water "
         "fraction. Confounded by very turbid water (SWIR rises), by wet soil and "
         "shadows (read as water), and by cloud shadow missed by the classification. "
-        "Water under cloud is unknown, not absent."
+        "A satellite proxy for surface water area; water under cloud is unknown, "
+        "not absent."
     )
 
     def compute(self, bands: Bands) -> np.ndarray:

@@ -4,6 +4,7 @@ from typing import Any
 
 from celery import Task
 from rasterio.errors import RasterioIOError
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.storage import get_store
@@ -14,6 +15,27 @@ from app.services.l03_ingestion.stac import SourceError
 from app.services.l05_water_detection.service import IngestionMissingError, scenes_needing_mask
 from app.services.l05_water_detection.service import compute_water_mask as _compute_water_mask
 from app.services.l05_water_detection.service import process_water_body as _process_water_body
+from app.services.l06_indicators.service import MaskMissingError, scenes_needing_indicators
+from app.services.l06_indicators.service import compute_indicators as _compute_indicators
+from app.services.l06_indicators.service import process_water_body as _process_indicators
+from app.services.l07_baseline.backfill import plan_backfill
+from app.services.l07_baseline.rainfall import (
+    RainfallSourceError,
+    backfill_rainfall,
+    sync_rainfall_recent,
+)
+from app.services.l07_baseline.service import (
+    build_water_body_baselines,
+    refresh_weekly,
+    water_bodies_with_observations,
+)
+from app.services.l08_anomaly.service import IndicatorsMissingError, scenes_needing_anomalies
+from app.services.l08_anomaly.service import detect_anomalies as _detect_anomalies
+from app.services.l08_anomaly.service import process_water_body as _process_anomalies
+from app.services.l09_fusion.models import load_validated_examples, train_xgboost
+from app.services.l09_fusion.service import process_water_body as _process_scores
+from app.services.l09_fusion.service import scenes_needing_scores
+from app.services.l09_fusion.service import score_scene as _score_scene
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -106,6 +128,13 @@ def compute_water_mask(self: Task, water_body_id: str, scene_id: str) -> dict[st
             raise LookupError(f"unknown water body {water_body_id!r} or scene {scene_id!r}")
         row, did_work = _compute_water_mask(session, get_store(), wb, scene)
         session.commit()
+        # Hand usable scenes to L6. Checked even when this call was a no-op, in case an
+        # earlier run crashed between the mask and the indicators.
+        enqueue = (
+            row.usable
+            and get_settings().indicators_after_mask
+            and bool(scenes_needing_indicators(session, water_body_id, [scene_id]))
+        )
         payload = {
             "water_body_id": water_body_id,
             "scene_id": scene_id,
@@ -114,8 +143,244 @@ def compute_water_mask(self: Task, water_body_id: str, scene_id: str) -> dict[st
             "valid_pixel_pct": row.valid_pixel_pct,
             "water_extent_km2": row.water_extent_km2,
             "chip_key": row.chip_key,
+            "indicators_enqueued": enqueue,
         }
+    if enqueue:
+        compute_indicators.delay(water_body_id, scene_id)
     log.info("water mask done", extra=payload)
+    return payload
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.compute_indicators",
+    queue="processing",
+    autoretry_for=(OSError, ConnectionError, TimeoutError, MaskMissingError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=4,
+    acks_late=True,
+)
+def compute_indicators(self: Task, water_body_id: str, scene_id: str) -> dict[str, Any]:
+    """L6 for one masked scene over one water body: zonal records into the
+    hypertable plus one COG chip per indicator. Idempotent; retries while the
+    mask row is still pending (MaskMissingError)."""
+    from app.db.models import Scene, WaterBody
+
+    with sync_session() as session:
+        wb = session.get(WaterBody, water_body_id)
+        scene = session.get(Scene, scene_id)
+        if wb is None or scene is None:
+            raise LookupError(f"unknown water body {water_body_id!r} or scene {scene_id!r}")
+        run, did_work = _compute_indicators(session, get_store(), wb, scene)
+        session.commit()
+        # Hand finished scenes to L8. Checked even on a no-op so a crash between
+        # L6 and L8 is healed by the next call.
+        enqueue = (
+            run.status == "done"
+            and get_settings().anomalies_after_indicators
+            and bool(scenes_needing_anomalies(session, water_body_id, [scene_id]))
+        )
+        payload = {
+            "water_body_id": water_body_id,
+            "scene_id": scene_id,
+            "did_work": did_work,
+            "status": run.status,
+            "n_zones": run.n_zones,
+            "n_observations": run.n_observations,
+            "n_rejected": len(run.rejected),
+            "chips": {k: v["chip_key"] for k, v in run.chips.items()},
+            "anomalies_enqueued": enqueue,
+        }
+    if enqueue:
+        detect_anomalies.delay(water_body_id, scene_id)
+    log.info("indicators done", extra=payload)
+    return payload
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.detect_anomalies",
+    queue="processing",
+    autoretry_for=(OSError, ConnectionError, TimeoutError, IndicatorsMissingError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=4,
+    acks_late=True,
+)
+def detect_anomalies(self: Task, water_body_id: str, scene_id: str) -> dict[str, Any]:
+    """L8 for one L6-processed scene: one anomaly candidate per zone with the
+    three detector scores, the rainfall gate decision and a provisional
+    severity. Idempotent; retries while the L6 run is still pending."""
+    from app.db.models import Scene, WaterBody
+
+    with sync_session() as session:
+        wb = session.get(WaterBody, water_body_id)
+        scene = session.get(Scene, scene_id)
+        if wb is None or scene is None:
+            raise LookupError(f"unknown water body {water_body_id!r} or scene {scene_id!r}")
+        run, did_work = _detect_anomalies(session, get_store(), wb, scene)
+        session.commit()
+        enqueue = (
+            run.status == "done"
+            and get_settings().score_after_anomalies
+            and bool(scenes_needing_scores(session, water_body_id, [scene_id]))
+        )
+        payload = {
+            "water_body_id": water_body_id,
+            "scene_id": scene_id,
+            "did_work": did_work,
+            "status": run.status,
+            "n_zones": run.n_zones,
+            "n_flagged": run.n_flagged,
+            "n_alertable": run.n_alertable,
+            "n_gated": run.n_gated,
+            "spatial_ran": run.spatial_ran,
+            "scoring_enqueued": enqueue,
+        }
+    if enqueue:
+        score_candidates.delay(water_body_id, scene_id)
+    log.info("anomalies done", extra=payload)
+    return payload
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.score_candidates",
+    queue="processing",
+    autoretry_for=(OSError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    acks_late=True,
+)
+def score_candidates(self: Task, water_body_id: str, scene_id: str) -> dict[str, Any]:
+    """L9 + L10 for every candidate of one scene: priority score, confidence,
+    final severity, four contributions and the summary, under the active model."""
+    from app.db.models import Scene, WaterBody
+
+    with sync_session() as session:
+        wb = session.get(WaterBody, water_body_id)
+        scene = session.get(Scene, scene_id)
+        if wb is None or scene is None:
+            raise LookupError(f"unknown water body {water_body_id!r} or scene {scene_id!r}")
+        scored = _score_scene(session, get_store(), wb, scene)
+        session.commit()
+        payload = {
+            "water_body_id": water_body_id,
+            "scene_id": scene_id,
+            "n_scored": len(scored),
+            "model_version": scored[0].attribution.model_version if scored else None,
+            "top": [
+                {
+                    "zone_id": s.zone_id,
+                    "priority": s.priority_score,
+                    "severity": s.severity,
+                    "confidence": s.confidence,
+                }
+                for s in sorted(scored, key=lambda s: -s.priority_score)[:3]
+            ],
+        }
+    log.info("scoring done", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.process_scores", queue="processing")
+def process_scores(
+    water_body_id: str, date_from: str, date_to: str | None = None, force: bool = False
+) -> dict[str, Any]:
+    """(Re)score every L8-processed scene in [date_from, date_to]; ``force``
+    rescores scenes that already have rows, e.g. after activating a new model."""
+    with sync_session() as session:
+        result = _process_scores(
+            session,
+            get_store(),
+            water_body_id,
+            date.fromisoformat(date_from),
+            date.fromisoformat(date_to) if date_to else None,
+            force=force,
+        )
+        session.commit()
+    payload = {
+        "water_body_id": result.water_body_id,
+        "scored": result.scored,
+        "skipped": result.skipped,
+        "failed": result.failed,
+    }
+    log.info("process scores done", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.train_priority_model", queue="processing")
+def train_priority_model(activate: bool = False) -> dict[str, Any]:
+    """Manual: fit an XGBoost priority model on validated outcomes (S11) and
+    register it. Refuses below ``priority_train_min_validations``."""
+    with sync_session() as session:
+        examples = load_validated_examples(session)
+        row = train_xgboost(session, get_store(), examples, activate=activate)
+        session.commit()
+        payload = {
+            "version": row.version,
+            "n_training": row.n_training,
+            "metrics": row.metrics,
+            "active": row.active,
+        }
+    log.info("priority model trained", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.process_anomalies", queue="processing")
+def process_anomalies(
+    water_body_id: str, date_from: str, date_to: str | None = None, force: bool = False
+) -> dict[str, Any]:
+    """Backfill anomaly candidates for every L6-processed scene in [date_from, date_to]."""
+    with sync_session() as session:
+        result = _process_anomalies(
+            session,
+            get_store(),
+            water_body_id,
+            date.fromisoformat(date_from),
+            date.fromisoformat(date_to) if date_to else None,
+            force=force,
+        )
+        session.commit()
+    payload = {
+        "water_body_id": result.water_body_id,
+        "computed": result.computed,
+        "skipped": result.skipped,
+        "unusable": result.unusable,
+        "failed": result.failed,
+    }
+    log.info("process anomalies done", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.process_indicators", queue="processing")
+def process_indicators(
+    water_body_id: str, date_from: str, date_to: str | None = None, force: bool = False
+) -> dict[str, Any]:
+    """Backfill indicators for every masked scene of a body in [date_from, date_to]."""
+    with sync_session() as session:
+        result = _process_indicators(
+            session,
+            get_store(),
+            water_body_id,
+            date.fromisoformat(date_from),
+            date.fromisoformat(date_to) if date_to else None,
+            force=force,
+        )
+        session.commit()
+    payload = {
+        "water_body_id": result.water_body_id,
+        "computed": result.computed,
+        "unusable": result.unusable,
+        "skipped": result.skipped,
+        "failed": result.failed,
+    }
+    log.info("process indicators done", extra=payload)
     return payload
 
 
@@ -158,3 +423,122 @@ def poll_tier1_scenes() -> dict[str, Any]:
         ingest_water_body.delay(wb_id, day.isoformat())
     log.info("tier1 poll", extra={"enqueued": len(pairs)})
     return {"enqueued": [[wb, d.isoformat()] for wb, d in pairs]}
+
+
+# --- S5: baselines + rainfall ------------------------------------------------------
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.build_baselines",
+    queue="processing",
+    autoretry_for=(OSError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    acks_late=True,
+)
+def build_baselines(
+    self: Task, water_body_id: str, indicators: list[str] | None = None
+) -> dict[str, Any]:
+    """Rebuild every (zone, indicator) seasonal baseline of one body from the
+    hypertable. Cheap (hundreds of rows per series), so always a full rebuild."""
+    with sync_session() as session:
+        result = build_water_body_baselines(session, water_body_id, indicators=indicators)
+        session.commit()
+    payload = {
+        "water_body_id": water_body_id,
+        "series_built": result.series_built,
+        "rows_written": result.rows_written,
+        "usable_windows": result.usable_windows,
+        "building_windows": result.building_windows,
+        "zones": result.zones,
+        "history_from": result.history_from.isoformat() if result.history_from else None,
+        "history_to": result.history_to.isoformat() if result.history_to else None,
+    }
+    log.info("baselines done", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.rebuild_all_baselines", queue="processing")
+def rebuild_all_baselines(tier: int | None = None) -> dict[str, Any]:
+    """Beat job (nightly): refresh the weekly aggregate over the whole archive and
+    rebuild baselines for every body that has observations."""
+    with sync_session() as session:
+        bodies = water_bodies_with_observations(session, tier=tier)
+        refresh_weekly(session)
+    for wb_id in bodies:
+        build_baselines.delay(wb_id)
+    log.info("baseline rebuild enqueued", extra={"n": len(bodies)})
+    return {"enqueued": bodies}
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.sync_rainfall",
+    queue="ingestion",
+    autoretry_for=(RainfallSourceError, OSError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=900,
+    retry_jitter=True,
+    max_retries=5,
+    acks_late=True,
+)
+def sync_rainfall(self: Task, water_body_id: str, backfill: bool = False) -> dict[str, Any]:
+    """Pull Open-Meteo precipitation for one body: the lookback window by
+    default, or the full archive since ``rainfall_history_start`` when backfilling."""
+    with sync_session() as session:
+        result = (
+            backfill_rainfall(session, water_body_id)
+            if backfill
+            else sync_rainfall_recent(session, water_body_id)
+        )
+        session.commit()
+    payload = {
+        "water_body_id": water_body_id,
+        "date_from": result.date_from.isoformat(),
+        "date_to": result.date_to.isoformat(),
+        "archive_rows": result.archive_rows,
+        "forecast_rows": result.forecast_rows,
+    }
+    log.info("rainfall synced", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.sync_rainfall_all", queue="ingestion")
+def sync_rainfall_all() -> dict[str, Any]:
+    """Beat job (daily): refresh the rainfall lookback window for every registered body."""
+    from app.db.models import WaterBody
+
+    with sync_session() as session:
+        ids = [str(x) for x in session.scalars(select(WaterBody.id).order_by(WaterBody.tier)).all()]
+    for wb_id in ids:
+        sync_rainfall.delay(wb_id)
+    log.info("rainfall sync enqueued", extra={"n": len(ids)})
+    return {"enqueued": ids}
+
+
+@celery_app.task(name="app.workers.tasks.backfill_history", queue="ingestion")
+def backfill_history(
+    water_body_id: str, date_from: str | None = None, date_to: str | None = None
+) -> dict[str, Any]:
+    """Bulk historical ingestion for a body: one ingest task per chunk (each
+    chains its masks and indicators), plus the rainfall archive. Run
+    ``build_baselines`` once the processing queue drains."""
+    plan = plan_backfill(
+        water_body_id,
+        date_from=date.fromisoformat(date_from) if date_from else None,
+        date_to=date.fromisoformat(date_to) if date_to else None,
+    )
+    for start, end in plan.chunks:
+        ingest_water_body.delay(water_body_id, start.isoformat(), end.isoformat())
+    sync_rainfall.delay(water_body_id, backfill=True)
+    payload = {
+        "water_body_id": water_body_id,
+        "date_from": plan.date_from.isoformat(),
+        "date_to": plan.date_to.isoformat(),
+        "chunks": plan.n_chunks,
+    }
+    log.info("backfill enqueued", extra=payload)
+    return payload

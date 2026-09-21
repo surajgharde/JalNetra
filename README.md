@@ -97,16 +97,118 @@ docker compose run --rm api python -c "from app.workers.tasks import ingest_wate
   `ingestion` queue; `ingest_water_body` retries transient failures with
   exponential backoff (max 5, capped at 10 min).
 
+## Seasonal baseline + rainfall (S5, L7)
+
+```sh
+# bulk history for a body: 3 years of scenes in 31-day ingest chunks (each chains mask -> indicators) + Open-Meteo archive
+docker compose run --rm api python -c "from app.workers.tasks import backfill_history as t; print(t.delay('wb_khadakwasla').get())"
+# once the processing queue drains, build the baselines
+docker compose run --rm api python -c "from app.workers.tasks import build_baselines as t; print(t.delay('wb_khadakwasla').get())"
+```
+
+- `baselines`: one row per (zone, indicator, day-of-year). Each row summarises
+  every observation within a 30-day window centred on that DOY (circular, so
+  late Dec and early Jan share a window) with **median** (`mean` column) and
+  **1.4826·MAD** (`std` column), plus p10/p90, `n_samples`, `n_years`.
+  A single historical spike moves the centre by <5 % (`tests/test_baseline.py`).
+- A window is `usable` only with ≥ `BASELINE_MIN_SAMPLES` (5) observations and
+  enough history span (Tier 1: 730 days, others 365); otherwise `building` and
+  L8 must suppress alerts. Status is recomputed on read, so raising a threshold
+  needs no rebuild.
+- Read side: `get_baseline(session, zone_id, indicator, date)`,
+  `get_baseline_year`, `series_with_band` (points + DOY band for the chart),
+  `zone_baseline_status`.
+- `rainfall`: daily `mm_24h` / `mm_72h` at each body's point-on-surface from
+  Open-Meteo — the ERA5 **archive** for history, the **forecast** API's
+  `past_days` for the ~5-day archive lag (archive rows overwrite forecast rows,
+  never the reverse). `get_rainfall_context(session, water_body_id, date)` adds
+  `mm_7d` and `available=False` when the day is missing.
+- `indicator_weekly` is a TimescaleDB continuous aggregate (weekly zone-indicator
+  means, hourly refresh policy over the last 90 days; `refresh_weekly` covers the
+  archive after a backfill). Read with `weekly_series`.
+- Beat: `sync_rainfall_all` daily 02:30 UTC, `rebuild_all_baselines` nightly 03:00 UTC.
+
+## Anomaly detection (S6, L8)
+
+```sh
+# one scene (normally chained automatically after compute_indicators)
+docker compose run --rm api python -c "from app.workers.tasks import detect_anomalies as t; print(t.delay('wb_khadakwasla','S2C_43QCA_20260503').get())"
+# backfill a window, oldest first so each scene sees only the history it would have had
+docker compose run --rm api python -c "from app.workers.tasks import process_anomalies as t; print(t.delay('wb_khadakwasla','2026-01-01','2026-09-21').get())"
+```
+
+Three detectors vote per zone per scene; none decides alone. One
+`anomaly_candidates` row is written per zone whether or not anything fired.
+
+- **Temporal** — robust z of the zone mean against its DOY baseline,
+  `z = (x − median) / max(1.4826·MAD, floor)`; flagged at |z| > 3, only when the
+  baseline is `usable`. Per-indicator sigma floors (`ANOMALY_SIGMA_FLOOR`) stop a
+  near-constant history from turning sensor noise into a huge z.
+- **Spatial** — per-pixel robust z of each L6 indicator chip against the body's
+  own water pixels *in the same scene*, DBSCAN (eps 3 px, min_samples 10) over
+  hot pixels, clusters ≥ 0.05 km² become real WGS84 polygons (`spatial_geom`,
+  `affected_area_km2`) attributed to the zone holding most of their pixels.
+  If > 30 % of the water is hot it is a body-wide shift, not a plume, and the
+  temporal detector owns the call.
+- **Multivariate** — IsolationForest (contamination 0.05) on
+  `[ndti, ndci, fai, sediment, water_extent_delta, rainfall_72h]` fitted on the
+  zone's own history (≥ 20 scenes; the current scene excluded).
+- **Severity** (provisional; L9 fuses confidence/priority): 3 votes → high;
+  2 votes → high if max|z| ≥ 5 else medium; 1 vote → medium if max|z| ≥ 5 else low.
+- **Rainfall gate (mandatory)** — if `mm_72h` exceeds the body's seasonal p90
+  (DOY window over the `rainfall` table) *and* only turbidity/sediment deviate,
+  `natural_cause_likely = true` and severity is capped at `medium`. Chlorophyll
+  and FAI deviations are never gated. The full decision is stored in
+  `rainfall_gate` (with `capped_from`) so the explanation panel can show it.
+- `alertable` is true only with a severity **and** a usable baseline; otherwise
+  `suppressed_reason` says why ("baseline building…"). Nothing in this layer
+  says "pollution": a candidate is an observable deviation.
+
+## Fusion, priority and explainability (S7, L9 + L10)
+
+```sh
+# scoring is chained automatically after detect_anomalies; rescore a window under the active model
+docker compose run --rm api python -c "from app.workers.tasks import process_scores as t; print(t.delay('wb_khadakwasla','2026-01-01','2026-09-21', True).get())"
+# once >= 50 validations exist (S11) and `uv sync --extra ml` is installed:
+docker compose run --rm api python -c "from app.workers.tasks import train_priority_model as t; print(t.delay(activate=True).get())"
+```
+
+One `candidate_scores` row per anomaly candidate, stamped with `model_version`.
+
+- **Feature vector** (`l09_fusion/features.py`): temporal z per indicator
+  (positive direction only — clearer-than-usual water earns nothing), cluster
+  area / zone area (√), indicators deviating together, growth vs the previous
+  pass, IsolationForest score, rainfall seasonal percentile, cloud-free share,
+  zone share of the body. Raw and normalised forms are both stored.
+- **Priority 0–100**: `weighted-v1` is the documented, always-available model
+  (weights in `l09_fusion/models.py`; rainfall is the one negative weight and
+  only bites above the seasonal median; cloud has weight 0 on purpose). An
+  XGBoost regressor trained on validated outcomes can be registered in
+  `priority_models` and activated; loading failures fall back to the weighted
+  model loudly.
+- **Severity** = score bands (low < 40, medium 40–69, high ≥ 70), then the S6
+  rainfall cap. **Confidence** = √(cloud-free share) × (baseline depth +
+  detector agreement)/2 — kept separate: a big deviation seen through 45 %
+  cloud is high severity at ~0.5 confidence.
+- **Explanation** (`l10_explain/explain.py`): exactly four signed
+  contributions summing to `score − base` — primary deviation, corroborating
+  indicators, spatial extent, rainfall (always rendered, negative when it
+  discounts) — same schema for the weighted path (weight × feature) and the
+  SHAP path. The summary follows the plan's template ("Flagged because the
+  turbidity indicator is 2.4x its seasonal baseline across 2.47 km2 of Eastern
+  zone, with a correlated rise in suspended sediment…") and `check_boundary`
+  rejects any summary containing pollution/contamination/discharge language.
+
 ## Status
 
 - [x] S0 — scaffold and infrastructure
 - [x] S1 — water body registry
 - [x] S2 — satellite ingestion (L3)
-- [ ] S3 — preprocessing and water mask (L4 + L5)
-- [ ] S4 — spectral indicators (L6)
-- [ ] S5 — baseline + rainfall (L7)
-- [ ] S6 — anomaly detection (L8)
-- [ ] S7 — fusion, priority, explainability (L9 + L10)
+- [x] S3 — preprocessing and water mask (L4 + L5)
+- [x] S4 — spectral indicators (L6)
+- [x] S5 — baseline + rainfall (L7)
+- [x] S6 — anomaly detection (L8)
+- [x] S7 — fusion, priority, explainability (L9 + L10)
 - [ ] S8 — alerts and reports (L11 + L12)
 - [ ] S9 — API and tile server (L2)
 - [ ] S10 — frontend (L1)
