@@ -1,4 +1,4 @@
-"""Celery application. Queues: default, ingestion (S12 adds processing/scoring/reporting)."""
+"""Celery application. Queues: default, ingestion, processing (S12 adds scoring/reporting)."""
 
 from celery import Celery
 from celery.schedules import crontab
@@ -27,6 +27,8 @@ celery_app.conf.update(
     task_routes={
         "app.workers.tasks.ingest_water_body": {"queue": "ingestion"},
         "app.workers.tasks.poll_tier1_scenes": {"queue": "ingestion"},
+        "app.workers.tasks.compute_water_mask": {"queue": "processing"},
+        "app.workers.tasks.process_water_body": {"queue": "processing"},
     },
     beat_schedule={
         "heartbeat-every-5-min": {

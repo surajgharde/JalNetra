@@ -28,6 +28,7 @@ dependencies = [
     "pystac>=1.10",
     "rasterio>=1.4",
     "tenacity>=8.4",
+    "scipy>=1.13",
 ]
 
 [dependency-groups]
@@ -60,7 +61,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*"]
+module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

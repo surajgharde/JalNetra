@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     ingest_lookback_days: int = 7  # beat poll window for Tier 1 bodies
     ingest_cache_prefix: str = "cache"  # MinIO key prefix for windowed arrays
 
+    # --- Preprocessing + water mask (L4 + L5) ---
+    mask_min_valid_pct: float = 40.0  # reject a scene for a body below this cloud-free share
+    chip_prefix: str = "chips"  # MinIO key prefix for COG chips
+    mask_after_ingest: bool = True  # ingest task enqueues compute_water_mask for new scenes
+
     # --- Health ---
     health_check_timeout_s: float = 3.0
 
