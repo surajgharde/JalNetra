@@ -53,6 +53,7 @@ class SceneCandidate:
     source: str
     assets: dict[str, str]  # canonical band -> href readable by GDAL
     epsg: int | None = None
+    boa_add_offset: int = 0  # DN units to add before /10000; see Scene.boa_add_offset
     gdal_env: dict[str, str] = field(default_factory=dict)  # extra GDAL config for reads
 
 
@@ -103,6 +104,24 @@ def _epsg_of(item: Item) -> int | None:
     return None
 
 
+BOA_ADD_OFFSET_RAW = -1000  # DN units ESA adds since processing baseline 04.00
+
+
+def _boa_add_offset_of(item: Item) -> int:
+    """DN units to add before scaling to reflectance (see ``Scene.boa_add_offset``).
+    Earth Search rewrites its COGs with the offset already removed and says so;
+    raw ESA data (CDSE) carries it from baseline 04.00 onwards."""
+    p = item.properties
+    if p.get("earthsearch:boa_offset_applied") is True:
+        return 0
+    baseline = p.get("s2:processing_baseline") or p.get("processing:baseline")
+    try:
+        return BOA_ADD_OFFSET_RAW if float(str(baseline)) >= 4.0 else 0
+    except (TypeError, ValueError):
+        # Unknown baseline: every scene since Jan 2022 and the reprocessed archive carry it.
+        return BOA_ADD_OFFSET_RAW
+
+
 class _BaseStacSource:
     name: ClassVar[str] = "stac"
     asset_keys: ClassVar[Mapping[str, str]] = {}
@@ -144,6 +163,7 @@ class _BaseStacSource:
             source=self.name,
             assets=assets,
             epsg=_epsg_of(item),
+            boa_add_offset=_boa_add_offset_of(item),
             gdal_env=self.gdal_env(),
         )
 

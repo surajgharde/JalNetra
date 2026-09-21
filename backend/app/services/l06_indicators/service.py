@@ -306,9 +306,7 @@ def compute_indicators(
                 f"mask chip {mask_row.chip_key} shape {water.shape} != bands {bands.shape}"
             )
 
-        rasters = compute_indicator_rasters(
-            bands, water, valid, boa_offset=settings.s2_boa_add_offset
-        )
+        rasters = compute_indicator_rasters(bands, water, valid, boa_offset=scene.boa_add_offset)
         zones = session.scalars(
             select(Zone).where(Zone.water_body_id == wb.id).order_by(Zone.seq)
         ).all()
@@ -342,7 +340,7 @@ def compute_indicators(
                     "formula": r.indicator.formula_doc,
                     "valid_range": f"{r.indicator.valid_range[0]},{r.indicator.valid_range[1]}",
                     "clipped_pct": str(r.clipped_pct),
-                    "boa_add_offset": str(settings.s2_boa_add_offset),
+                    "boa_add_offset": str(scene.boa_add_offset),
                     "water_only": str(r.indicator.water_only),
                 },
             )
@@ -383,7 +381,7 @@ def compute_indicators(
         metrics.zones_processed.labels(outcome="accepted").inc(n_obs)
         metrics.zones_processed.labels(outcome="rejected").inc(len(rejected))
         run.chips = chips
-        run.boa_offset = settings.s2_boa_add_offset
+        run.boa_offset = scene.boa_add_offset
     except Exception as exc:
         run.status = "failed"
         run.error = f"{type(exc).__name__}: {exc}"[:2000]

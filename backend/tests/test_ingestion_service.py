@@ -23,7 +23,13 @@ pytestmark = pytest.mark.integration
 WB = "wb_khadakwasla"
 
 
-def _cand(scene_id: str, day: date, cloud: float, source: str = "earth-search") -> SceneCandidate:
+def _cand(
+    scene_id: str,
+    day: date,
+    cloud: float,
+    source: str = "earth-search",
+    boa_add_offset: int = -1000,  # the synthetic DNs in tests carry ESA's offset
+) -> SceneCandidate:
     return SceneCandidate(
         id=scene_id,
         mgrs_tile="43QCA",
@@ -34,6 +40,7 @@ def _cand(scene_id: str, day: date, cloud: float, source: str = "earth-search") 
         source=source,
         assets={b: f"https://cogs/{scene_id}/{b}.tif" for b in BANDS},
         epsg=32643,
+        boa_add_offset=boa_add_offset,
     )
 
 
@@ -92,6 +99,7 @@ def test_search_persists_scenes_with_usable_flag(session) -> None:  # type: igno
     assert (
         row is not None and row.assets["B04"].endswith("/B04.tif") and row.source == "earth-search"
     )
+    assert row.boa_add_offset == -1000
 
     # Re-search from a different source keeps the original provenance.
     svc.search_scenes(
@@ -192,6 +200,7 @@ def test_acceptance_khadakwasla_real_scene(session) -> None:  # type: ignore[no-
     assert elapsed < 60, f"took {elapsed:.1f}s"
     scene = session.get(Scene, scene_id)
     assert scene is not None and scene.usable and scene.source == "earth-search"
+    assert scene.boa_add_offset == 0  # Earth Search COGs already have the offset removed
 
     again = svc.ingest_water_body(session, store, WB, day)
     session.commit()

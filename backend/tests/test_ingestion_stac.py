@@ -99,6 +99,22 @@ def test_earth_search_candidate_mapping() -> None:
     assert call["datetime"] == "2026-07-01T00:00:00Z/2026-07-31T23:59:59Z"
 
 
+@pytest.mark.parametrize(
+    ("props", "expected"),
+    [
+        ({"earthsearch:boa_offset_applied": True, "s2:processing_baseline": "05.12"}, 0),
+        ({"s2:processing_baseline": "05.12"}, -1000),  # raw ESA data (CDSE)
+        ({"processing:baseline": "03.01"}, 0),  # pre-2022 product, no offset yet
+        ({}, -1000),  # unknown baseline: assume the modern archive
+    ],
+)
+def test_boa_add_offset_follows_provider_metadata(props: dict[str, Any], expected: int) -> None:
+    src = EarthSearchSource("https://example/v1")
+    src._client = _FakeClient([_earth_item(**props)])  # type: ignore[assignment]
+    (c,) = src.search(AOI, date(2026, 7, 1), date(2026, 7, 31))
+    assert c.boa_add_offset == expected
+
+
 def test_search_filters_to_requested_tiles_and_sorts() -> None:
     later = _earth_item("S2B_43QCA_20260719_0_L2A")
     other = _earth_item("S2B_43QDA_20260716_0_L2A")

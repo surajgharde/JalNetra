@@ -6,38 +6,89 @@ Satellite-based water quality and contamination intelligence for Maharashtra.
 water indicators and prioritises zones for ground investigation. It never claims to
 detect, prove or confirm pollution or contamination. Every alert carries a `disclaimer`.
 
-See `JalNetra — Maharashtra State-Wide Implementation Plan.md` for the full plan.
-This repository is built section by section (S0 → S12) from that plan.
+## How it works
+
+Every Sentinel-2 pass over a registered water body flows through one pipeline,
+one Celery task per stage, each idempotent on (water body, scene):
+
+| Layer | Stage | Where |
+| ----- | ----- | ----- |
+| L1 | Dashboard, priority queue, alert sheet, validation form | `frontend/src` |
+| L2 | REST API + TiTiler proxy, keyset pagination, Redis cache | `backend/app/api`, `app/services/l02_api` |
+| L3 | STAC discovery (Earth Search, CDSE fallback), windowed COG reads, MinIO cache | `app/services/l03_ingestion` |
+| L4/L5 | SCL cloud gate, MNDWI water mask, usable-pixel share per body | `app/services/l05_water_detection` |
+| L6 | Zonal indicators (NDTI turbidity, NDCI chlorophyll, FAI algae, red-band sediment, MNDWI extent) into a Timescale hypertable + COG chips | `app/services/l06_indicators` |
+| L7 | Day-of-year robust baselines (median/MAD), Open-Meteo rainfall, weekly aggregate | `app/services/l07_baseline` |
+| L8 | Temporal, spatial (DBSCAN plumes) and multivariate (IsolationForest) detectors, mandatory rainfall gate | `app/services/l08_anomaly` |
+| L9/L10 | Priority 0-100 (weighted model, optional XGBoost), four signed contributions + plain-language summary | `app/services/l09_fusion`, `l10_explain` |
+| L11/L12 | Alert assembly with 14-day dedup, one-page PDF brief, webhook/e-mail dispatch | `app/services/l11_alerts`, `l12_delivery` |
+| L13 | Field validation verdicts, precision summary, feedback into baselines, guarded retraining | `app/services/l13_validation` |
+| Ops | Prometheus metrics, Grafana dashboard + alert rules, Sentry, Flower, resumable backfill CLI | `app/core/metrics.py`, `app/cli.py`, `infra/` |
+
+Stages hand off to each other automatically (mask -> indicators -> anomalies ->
+scoring -> alerts); `POST /api/v1/jobs/ingest` starts the chain for one body and
+window and `GET /jobs/{id}` derives progress from the stage tables.
 
 ## Layout
 
 ```
 backend/    FastAPI app + Celery workers (Python 3.11, uv)
-  app/api/        routers, middleware
-  app/core/       config, logging, health probes
-  app/db/         SQLAlchemy session, models, Alembic migrations
-  app/services/   one package per pipeline layer L3–L13 (+ registry)
-  app/workers/    Celery app, tasks, signals
-  app/schemas/    Pydantic v2 response models
+  app/api/        routers, middleware, tile proxy
+  app/core/       config, logging, metrics, cache, storage, health probes
+  app/db/         SQLAlchemy models, session, Alembic migrations (0001-0012)
+  app/services/   one package per pipeline layer L2-L13 (+ registry, ops)
+  app/workers/    Celery app, tasks, beat schedule, signals
+  app/schemas/    Pydantic v2 response models (the API contract)
+  app/cli.py      resumable backfill
   tests/
-frontend/   Vite + React 18 + TypeScript dashboard (S10)
-infra/      compose init SQL
+frontend/   Vite + React 18 + TypeScript dashboard
+infra/      compose init SQL, Prometheus + Grafana provisioning
 notebooks/  exploration
 ```
 
-## Quick start (Docker only)
+## Quick start (Docker)
+
+Docker Desktop with at least ~20 GB free on its data disk: images plus build
+cache for the geo stack run to ~35 GB, and a full disk kills the WSL VM mid-build.
 
 ```sh
 cp .env.example .env
 make up          # api :8000, postgres :5432, redis :6379, minio :9000/:9001, titiler :8001
 make migrate     # alembic upgrade head
-make test        # pytest inside the api image
+make seed        # 30 Pune-district water bodies + zones
 curl localhost:8000/health
 ```
 
-`make test-integration` runs the same suite plus tests that hit the live stack.
-Without `make` (e.g. Windows), run the commands from the `Makefile` directly, e.g.
+Then either open the dashboard (`cd frontend && npm install && npm run dev`,
+http://localhost:5173) and press **Run pipeline**, or start a job by hand:
+
+```sh
+curl -X POST localhost:8000/api/v1/jobs/ingest -H 'content-type: application/json' \
+  -d '{"water_body_id":"wb_khadakwasla","date_from":"2026-04-20","date_to":"2026-05-10"}'
+curl localhost:8000/api/v1/jobs/<job_id>       # status, progress_pct, per-stage counts
+```
+
+A three-week window over Khadakwasla finds about five scenes and runs end to end
+in roughly four minutes; each scene is a ~7 MB windowed read from AWS (~30 s).
+Alerts need a seasonal baseline, so a fresh database raises none: see
+*Backfill and baselines*.
+
+`make test` runs the unit suite inside the api image; `make test-integration`
+adds the tests that hit the live stack (`JALNETRA_INTEGRATION=1`). Without
+`make` (Windows), run the lines from the `Makefile` directly, e.g.
 `docker compose run --rm api alembic upgrade head`.
+
+### Backfill and baselines
+
+```sh
+make backfill wb=wb_khadakwasla from=2023-01-01 to=2026-09-01   # resumable; re-run after an interruption
+make backfill-status
+docker compose run --rm api python -c "from app.workers.tasks import build_baselines as t; print(t.delay('wb_khadakwasla').get())"
+```
+
+Baselines become `usable` with at least 5 samples per day-of-year window and
+730 days of history for Tier 1 bodies (365 otherwise); until then every zone
+shows "baseline building" and anomalies are suppressed with that reason.
 
 ## Local development without Docker
 
@@ -45,23 +96,45 @@ Without `make` (e.g. Windows), run the commands from the `Makefile` directly, e.
 cd backend
 uv sync                # creates .venv with Python 3.11
 uv run pytest
-uv run ruff check . && uv run mypy .
+uv run ruff check . && uv run ruff format --check . && uv run mypy .
 uv run uvicorn app.main:app --reload
 ```
 
 ## Services
 
-| Service  | Image                              | Port       |
-| -------- | ---------------------------------- | ---------- |
-| api      | `backend/Dockerfile` (uvicorn)     | 8000       |
-| worker   | same image, `celery worker`        | —          |
-| beat     | same image, `celery beat`          | —          |
-| postgres | `timescale/timescaledb-ha:pg16`    | 5432       |
-| redis    | `redis:7-alpine`                   | 6379       |
-| minio    | `quay.io/minio/minio`                      | 9000, 9001 |
-| titiler  | `ghcr.io/developmentseed/titiler`  | 8001       |
+| Service                       | Image                                                     | Port               |
+| ----------------------------- | --------------------------------------------------------- | ------------------ |
+| api                           | `backend/Dockerfile` (uvicorn)                            | 8000               |
+| worker-ingestion              | same image, `celery worker -Q ingestion`                  | -                  |
+| worker-processing             | same image, `-Q processing`                               | -                  |
+| worker-scoring                | same image, `-Q scoring`                                  | -                  |
+| worker-reporting              | same image, `-Q reporting`                                | -                  |
+| beat                          | same image, `celery beat`                                 | -                  |
+| postgres                      | `timescale/timescaledb-ha:pg16`                           | 5432               |
+| redis                         | `redis:7-alpine`                                          | 6379               |
+| minio                         | `quay.io/minio/minio`                                     | 9000, 9001         |
+| titiler                       | `ghcr.io/developmentseed/titiler` (pinned to `PORT=8000`) | 8001               |
+| flower / prometheus / grafana | `--profile ops` only                                      | 5555 / 9090 / 3000 |
 
-## Water body registry (S1)
+## Status
+
+All thirteen layers are implemented and were exercised against the live stack
+on 2026-09-22: migrations 0001-0012 applied, seed loaded, an ingest job for
+Khadakwasla ran every stage to `done`, series endpoints answer in 10-30 ms,
+TiTiler renders the water-mask and indicator chips, and the dashboard shows all
+30 bodies with per-zone indicators and the timeline.
+
+**Known issues**
+
+- A body that straddles two MGRS tiles can get two scenes on the same date;
+  chips are keyed by body + date, so the second scene's chip overwrites the
+  first and L6 fails with a shape mismatch for that date (seen on Nira
+  Deoghar, tiles 43QCA/43QCV). Needs per-tile mosaicking.
+- No alert has yet been raised from real data on this box: the seasonal
+  baselines need a multi-year backfill first (`make backfill`).
+- The `ops` profile (Flower, Prometheus, Grafana) has not been exercised live.
+
+## Water body registry
 
 ```sh
 make seed                                   # 30 Pune-district bodies from OSM outlines, 4-8 zones each
@@ -77,7 +150,7 @@ make mgrs-grid                              # optional: exact Sentinel-2 tile lo
   the exact ESA grid (cache under `backend/data/mgrs/`, git-ignored).
 - Seed outlines © OpenStreetMap contributors (ODbL), fetched via Overpass.
 
-## Satellite ingestion (S2, L3)
+## Satellite ingestion (L3)
 
 ```sh
 # one water body, one day (Celery task; also callable from Python via app.services.l03_ingestion.service)
@@ -93,11 +166,18 @@ docker compose run --rm api python -c "from app.workers.tasks import ingest_wate
   Khadakwasla: ~7 MB and ~20 s per pass instead of ~13 GB per tile.
 - Arrays are cached in MinIO at `cache/{water_body_id}/{scene_id}/bands.npz`;
   `scene_ingestions` makes the task idempotent on (water_body_id, scene_id).
+- **Reflectance offset is decided per scene.** Raw ESA L2A stores
+  `DN = (rho + 0.1) * 10000` since processing baseline 04.00, but Earth Search
+  serves COGs with that offset already removed (`earthsearch:boa_offset_applied`).
+  Ingestion records the right `boa_add_offset` on the `scenes` row (0 for Earth
+  Search, -1000 for raw CDSE data) and L6 applies that, so indicators are
+  comparable across sources. Applying the offset twice clips dark water to zero
+  and drives NDTI to -1.
 - Beat: `poll_tier1_scenes` every 6 h enqueues new Tier 1 scenes on the
   `ingestion` queue; `ingest_water_body` retries transient failures with
   exponential backoff (max 5, capped at 10 min).
 
-## Seasonal baseline + rainfall (S5, L7)
+## Seasonal baseline + rainfall (L7)
 
 ```sh
 # bulk history for a body: 3 years of scenes in 31-day ingest chunks (each chains mask -> indicators) + Open-Meteo archive
@@ -128,7 +208,7 @@ docker compose run --rm api python -c "from app.workers.tasks import build_basel
   archive after a backfill). Read with `weekly_series`.
 - Beat: `sync_rainfall_all` daily 02:30 UTC, `rebuild_all_baselines` nightly 03:00 UTC.
 
-## Anomaly detection (S6, L8)
+## Anomaly detection (L8)
 
 ```sh
 # one scene (normally chained automatically after compute_indicators)
@@ -164,12 +244,12 @@ Three detectors vote per zone per scene; none decides alone. One
   `suppressed_reason` says why ("baseline building…"). Nothing in this layer
   says "pollution": a candidate is an observable deviation.
 
-## Fusion, priority and explainability (S7, L9 + L10)
+## Fusion, priority and explainability (L9 + L10)
 
 ```sh
 # scoring is chained automatically after detect_anomalies; rescore a window under the active model
 docker compose run --rm api python -c "from app.workers.tasks import process_scores as t; print(t.delay('wb_khadakwasla','2026-01-01','2026-09-21', True).get())"
-# once >= 50 validations exist (S11) and `uv sync --extra ml` is installed:
+# once >= 50 validations exist (see Validation loop) and `uv sync --extra ml` is installed:
 docker compose run --rm api python -c "from app.workers.tasks import train_priority_model as t; print(t.delay(activate=True).get())"
 ```
 
@@ -194,12 +274,12 @@ One `candidate_scores` row per anomaly candidate, stamped with `model_version`.
   contributions summing to `score − base` — primary deviation, corroborating
   indicators, spatial extent, rainfall (always rendered, negative when it
   discounts) — same schema for the weighted path (weight × feature) and the
-  SHAP path. The summary follows the plan's template ("Flagged because the
+  SHAP path. The summary follows a fixed template ("Flagged because the
   turbidity indicator is 2.4x its seasonal baseline across 2.47 km2 of Eastern
   zone, with a correlated rise in suspended sediment…") and `check_boundary`
   rejects any summary containing pollution/contamination/discharge language.
 
-## Alerts and reports (S8, L11 + L12)
+## Alerts and reports (L11 + L12)
 
 ```sh
 # alerts are assembled automatically after scoring; backfill a window (no briefs/dispatch unless briefs=True)
@@ -216,7 +296,7 @@ curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: applica
   absorbs the new observation — current fields refresh, `peak_*` is kept, and
   the observation is appended to `timeline`. Non-alertable observations of the
   same zone are appended too, so the timeline shows the episode subsiding.
-- **Contract** (`app/schemas/alerts.py`): the plan's alert JSON, field for
+- **Contract** (`app/schemas/alerts.py`): the alert JSON is frozen, field for
   field, with `disclaimer` verbatim on every response; additions only, no renames.
 - **Endpoints**: `GET /api/v1/alerts`, `/alerts.geojson`, `/alerts/{id}`,
   `/alerts/{id}/geometry.geojson`, `/alerts/{id}/brief.pdf` (generated on first
@@ -233,9 +313,9 @@ curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: applica
   point-in-polygon on the zone — get the alert JSON (HMAC-signed) or an HTML
   e-mail on creation and on escalation only. `DISPATCH_ENABLED=false` by
   default: a dev box logs `skipped` rows and never pages a regional office.
-- Worker queue `reporting` carries briefs and dispatches; compose already lists it.
+- Worker queue `reporting` carries briefs and dispatches.
 
-## Backend API and tile server (S9, L2)
+## Backend API and tile server (L2)
 
 ```sh
 uv run uvicorn app.main:app --reload         # then open http://localhost:8000/docs
@@ -246,9 +326,9 @@ curl localhost:8000/api/v1/jobs/<job_id>       # state, progress_pct, current_st
 curl -o t.png localhost:8000/tiles/turbidity/wb_khadakwasla/2026-09-17/13/5776/3651.png
 ```
 
-Every endpoint of the frozen contract is mounted under `/api/v1` (plus
-`/tiles/...` and `/health`); `tests/test_api.py` asserts the inventory and that
-the demo-facing models carry `/docs` examples.
+Every endpoint of the API contract is mounted under `/api/v1` (plus
+`/tiles/...`, `/health` and `/metrics`); `tests/test_api.py` asserts the inventory
+and that the demo-facing models carry `/docs` examples.
 
 - **Async throughout.** Handlers use the async engine; the read models in
   `app/services/l02_api/` are sync SQLAlchemy executed through
@@ -271,10 +351,10 @@ the demo-facing models carry `/docs` examples.
   mask a single blue, anomaly red. `/tiles/styles` feeds the legend.
 - **Rate limiting** (slowapi): `RATE_LIMIT_DEFAULT` per client IP, a higher
   `RATE_LIMIT_TILES` on tiles. **/health** now also probes the STAC source.
-- `validations` table + `POST/GET /validations` store field results now;
-  verdicts, photo upload and the precision summary land in S11.
+- `validations` table + `POST/GET /validations` store field results; verdicts,
+  photo upload and the precision summary are in the validation loop below.
 
-## Frontend (S10, L1)
+## Frontend (L1)
 
 ```sh
 cd frontend
@@ -307,7 +387,7 @@ Export the schema with
 - Loading skeletons, empty and error states on every panel; `?wb=` and
   `?alert=` in the URL make any demo state a shareable link.
 
-## Validation loop (S11, L13)
+## Validation loop (L13)
 
 ```sh
 curl -X POST localhost:8000/api/v1/validations -H 'content-type: application/json'   -d '{"alert_id":"alr_2026_0917_khadakwasla_z3","sampled_on":"2026-09-19","lab_results":{"turbidity_ntu":48},"submitted_by":"RO Pune"}'
@@ -341,7 +421,7 @@ docker compose run --rm api python -c "from app.workers.tasks import train_prior
 - Photos go to MinIO `validations/{id}/…`; the frontend form uploads one after
   submit and shows the verdict and its reason immediately.
 
-## Scale, ops and observability (S12)
+## Scale, ops and observability
 
 ```sh
 make ops                                   # stack + Flower :5555, Prometheus :9090, Grafana :3000 (admin / jalnetra)

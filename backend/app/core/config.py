@@ -69,9 +69,6 @@ class Settings(BaseSettings):
     mask_after_ingest: bool = True  # ingest task enqueues compute_water_mask for new scenes
 
     # --- Spectral indicators (L6) ---
-    # L2A DN = (reflectance + 0.1) * 10000 for processing baseline >= 04.00 (all scenes
-    # since Jan 2022 and the reprocessed archive). Set 0 for legacy pre-2022 products.
-    s2_boa_add_offset: int = -1000
     indicator_min_valid_pct: float = 30.0  # reject a zone record below this cloud-free share
     indicator_min_pixels: int = 25  # ... or with fewer aggregated pixels than this
     indicators_after_mask: bool = True  # mask task enqueues compute_indicators when usable

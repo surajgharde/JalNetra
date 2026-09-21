@@ -54,6 +54,7 @@ def upsert_scene(session: Session, cand: SceneCandidate, max_cloud_pct: float) -
         "usable": cand.cloud_pct <= max_cloud_pct,
         "assets": cand.assets,
         "epsg": cand.epsg,
+        "boa_add_offset": cand.boa_add_offset,
     }
     stmt = insert(Scene).values(**values)
     # A re-search never downgrades provenance: keep the first source that served the scene.
@@ -111,6 +112,7 @@ def candidate_from_scene(scene: Scene, gdal_env: dict[str, str] | None = None) -
         source=scene.source,
         assets=dict(scene.assets),
         epsg=scene.epsg,
+        boa_add_offset=scene.boa_add_offset,
         gdal_env=gdal_env or {},
     )
 

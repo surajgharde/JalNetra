@@ -5,11 +5,14 @@ Every indicator is a *satellite proxy*. ``scientific_basis`` states what it prox
 and what confounds it; the UI panel and the PDF brief render that text verbatim,
 so it is written for a district engineer, not for a remote-sensing audience.
 
-Reflectance: Sentinel-2 L2A digital numbers are ``DN = (rho + 0.1) * 10000`` for
-processing baseline >= 04.00 (every scene since Jan 2022, and the reprocessed
+Reflectance: raw Sentinel-2 L2A digital numbers are ``DN = (rho + 0.1) * 10000``
+for processing baseline >= 04.00 (every scene since Jan 2022, and the reprocessed
 Collection 1 archive). Normalised differences are scale-invariant but *not*
 offset-invariant, so the offset must be removed before any index is computed --
-otherwise NDTI over water is damped by roughly a factor of three.
+otherwise NDTI over water is damped by roughly a factor of three. The reverse is
+just as bad: Earth Search serves COGs with the offset already removed, and
+subtracting it again clips every dark-water pixel to zero. The offset to apply is
+therefore decided per scene at ingestion (``Scene.boa_add_offset``), never assumed.
 """
 
 from __future__ import annotations

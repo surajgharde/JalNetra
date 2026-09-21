@@ -26,6 +26,12 @@ class Scene(Base):
     usable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     assets: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     epsg: Mapped[int | None] = mapped_column(Integer)
+    # DN units to *add* before dividing by 10000 to get reflectance: -1000 for raw ESA
+    # data on processing baseline >= 04.00, 0 when the provider already removed the
+    # offset (Earth Search) or the baseline predates it. Decided per scene at ingestion.
+    boa_add_offset: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
