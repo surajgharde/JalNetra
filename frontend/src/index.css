@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 201 96% 32%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 199 89% 94%;
+    --accent-foreground: 201 96% 22%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 89%;
+    --input: 214 32% 89%;
+    --ring: 201 96% 32%;
+    --radius: 0.5rem;
+  }
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Leaflet lives inside a flex layout; without this the map collapses to 0px. */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #dbe7f0;
+  font-family: inherit;
+}
+.leaflet-control-attribution {
+  font-size: 10px;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px -8px rgb(15 23 42 / 0.3);
+}
+.leaflet-popup-content {
+  margin: 10px 12px;
+  font-size: 12px;
+}
+
+/* Alert markers on the map. */
+.jn-alert-marker {
+  background: transparent;
+  border: 0;
+}
+.jn-alert-marker span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgb(15 23 42 / 0.25);
+}
+.jn-alert-marker.pulse span {
+  animation: jn-pulse 1.8s ease-out infinite;
+}
+@keyframes jn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(185 28 28 / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgb(185 28 28 / 0);
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
