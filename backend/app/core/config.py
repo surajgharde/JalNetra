@@ -130,6 +130,24 @@ class Settings(BaseSettings):
     priority_z_saturation: float = 5.0  # a temporal z of this or more counts as a full deviation
     score_after_anomalies: bool = True  # detect_anomalies enqueues score_candidates
 
+    # --- Alerts + delivery (L11 + L12) ---
+    alert_dedupe_days: int = (
+        14  # an open alert for the same zone+indicator absorbs new observations
+    )
+    alert_min_priority: float = 0.0  # alertable candidates below this never become alerts
+    alerts_after_scoring: bool = True  # score_candidates enqueues assemble_alerts
+    brief_prefix: str = "briefs"  # MinIO key prefix for investigation-brief PDFs
+    brief_series_months: int = 12  # evidence timeline span in the brief
+    public_base_url: str = "http://localhost:8000"  # absolute links in e-mails / webhooks
+    dispatch_enabled: bool = False  # master switch: never deliver from a dev box by accident
+    dispatch_timeout_s: float = 15.0
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "jalnetra@localhost"
+    smtp_starttls: bool = True
+
     # --- Health ---
     health_check_timeout_s: float = 3.0
 

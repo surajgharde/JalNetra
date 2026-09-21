@@ -29,6 +29,9 @@ dependencies = [
     "rasterio>=1.4",
     "tenacity>=8.4",
     "scipy>=1.13",
+    "reportlab>=4.2",
+    "matplotlib>=3.9",
+    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -69,7 +72,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*"]
+module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*", "reportlab.*", "matplotlib.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

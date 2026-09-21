@@ -199,6 +199,42 @@ One `candidate_scores` row per anomaly candidate, stamped with `model_version`.
   zone, with a correlated rise in suspended sediment…") and `check_boundary`
   rejects any summary containing pollution/contamination/discharge language.
 
+## Alerts and reports (S8, L11 + L12)
+
+```sh
+# alerts are assembled automatically after scoring; backfill a window (no briefs/dispatch unless briefs=True)
+docker compose run --rm api python -c "from app.workers.tasks import process_alerts as t; print(t.delay('wb_khadakwasla','2026-01-01','2026-09-21').get())"
+curl localhost:8000/api/v1/alerts?status=active&severity=medium          # priority descending
+curl localhost:8000/api/v1/alerts.geojson                                 # map layer, priority_score in properties
+curl -o brief.pdf localhost:8000/api/v1/alerts/alr_2026_0917_khadakwasla_z3/brief.pdf
+curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: application/json' -d '{"status":"investigating","by":"RO Pune","note":"team dispatched"}'
+```
+
+- **Assembler** (`l11_alerts/assembler.py`): an alertable `candidate_scores`
+  row becomes an `alerts` row (`alr_{YYYY}_{MMDD}_{body}_z{seq}`). **Dedup**: an
+  open/investigating alert for the same zone + primary indicator within 14 days
+  absorbs the new observation — current fields refresh, `peak_*` is kept, and
+  the observation is appended to `timeline`. Non-alertable observations of the
+  same zone are appended too, so the timeline shows the episode subsiding.
+- **Contract** (`app/schemas/alerts.py`): the plan's alert JSON, field for
+  field, with `disclaimer` verbatim on every response; additions only, no renames.
+- **Endpoints**: `GET /api/v1/alerts`, `/alerts.geojson`, `/alerts/{id}`,
+  `/alerts/{id}/geometry.geojson`, `/alerts/{id}/brief.pdf` (generated on first
+  request if the worker hasn't yet), `PATCH /alerts/{id}/status`, and a
+  `webhook-preview` dry run.
+- **Brief** (`l12_delivery/brief.py`): one A4 page via ReportLab + matplotlib —
+  header, explanation, indicator table (current vs baseline), evidence timeline
+  with the seasonal band, reference-vs-current image pair from the L6 chips
+  (reference = same season, previous year), the four contributions as a signed
+  bar chart, field-sampling checklist and the disclaimer. Stored at
+  `briefs/{alert_id}.pdf`; ~60–90 KB.
+- **Dispatch** (`l12_delivery/dispatch.py`): `recipients` (webhook or e-mail)
+  with `min_severity` and a jurisdiction — district names or a polygon matched
+  point-in-polygon on the zone — get the alert JSON (HMAC-signed) or an HTML
+  e-mail on creation and on escalation only. `DISPATCH_ENABLED=false` by
+  default: a dev box logs `skipped` rows and never pages a regional office.
+- Worker queue `reporting` carries briefs and dispatches; compose already lists it.
+
 ## Status
 
 - [x] S0 — scaffold and infrastructure
@@ -209,7 +245,7 @@ One `candidate_scores` row per anomaly candidate, stamped with `model_version`.
 - [x] S5 — baseline + rainfall (L7)
 - [x] S6 — anomaly detection (L8)
 - [x] S7 — fusion, priority, explainability (L9 + L10)
-- [ ] S8 — alerts and reports (L11 + L12)
+- [x] S8 — alerts and reports (L11 + L12)
 - [ ] S9 — API and tile server (L2)
 - [ ] S10 — frontend (L1)
 - [ ] S11 — validation loop (L13)

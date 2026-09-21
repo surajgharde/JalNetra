@@ -36,6 +36,10 @@ from app.services.l09_fusion.models import load_validated_examples, train_xgboos
 from app.services.l09_fusion.service import process_water_body as _process_scores
 from app.services.l09_fusion.service import scenes_needing_scores
 from app.services.l09_fusion.service import score_scene as _score_scene
+from app.services.l11_alerts.assembler import assemble_scene as _assemble_scene
+from app.services.l12_delivery.brief import generate_brief as _generate_brief
+from app.services.l12_delivery.dispatch import DeliveryError
+from app.services.l12_delivery.dispatch import dispatch_alert as _dispatch_alert
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -283,8 +287,160 @@ def score_candidates(self: Task, water_body_id: str, scene_id: str) -> dict[str,
                 }
                 for s in sorted(scored, key=lambda s: -s.priority_score)[:3]
             ],
+            "alerts_enqueued": bool(scored) and get_settings().alerts_after_scoring,
         }
+    if payload["alerts_enqueued"]:
+        assemble_alerts.delay(water_body_id, scene_id)
     log.info("scoring done", extra=payload)
+    return payload
+
+
+# --- S8: alerts + delivery ---------------------------------------------------------
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.assemble_alerts",
+    queue="processing",
+    autoretry_for=(OSError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    acks_late=True,
+)
+def assemble_alerts(self: Task, water_body_id: str, scene_id: str) -> dict[str, Any]:
+    """L11 for one scored scene: create or update alerts (14-day dedup per
+    zone + indicator), then enqueue a brief and a dispatch for every alert that
+    is new or escalated."""
+    from app.db.models import Scene, WaterBody
+
+    with sync_session() as session:
+        wb = session.get(WaterBody, water_body_id)
+        scene = session.get(Scene, scene_id)
+        if wb is None or scene is None:
+            raise LookupError(f"unknown water body {water_body_id!r} or scene {scene_id!r}")
+        result = _assemble_scene(session, wb, scene)
+        session.commit()
+    notify = [(a, "new") for a in result.created] + [(a, "escalated") for a in result.escalated]
+    for alert_id, _reason in notify:
+        generate_brief.delay(alert_id)
+    for alert_id, reason in notify:
+        dispatch_alert.delay(alert_id, reason)
+    # Updated-but-not-escalated alerts still get a refreshed brief for the latest observation.
+    for alert_id in set(result.updated) - set(result.escalated):
+        generate_brief.delay(alert_id)
+    payload = {
+        "water_body_id": water_body_id,
+        "scene_id": scene_id,
+        "created": result.created,
+        "updated": result.updated,
+        "escalated": result.escalated,
+        "appended": result.appended,
+        "skipped": result.skipped,
+    }
+    log.info("alerts done", extra=payload)
+    return payload
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.generate_brief",
+    queue="reporting",
+    autoretry_for=(OSError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    acks_late=True,
+)
+def generate_brief(self: Task, alert_id: str, force: bool = False) -> dict[str, Any]:
+    """L12: render the one-page investigation brief to MinIO briefs/{alert_id}.pdf."""
+    from app.db.models import Alert
+
+    with sync_session() as session:
+        alert = session.get(Alert, alert_id)
+        if alert is None:
+            raise LookupError(f"unknown alert {alert_id!r}")
+        key, did_work = _generate_brief(session, get_store(), alert, force=force)
+        session.commit()
+    payload = {"alert_id": alert_id, "brief_key": key, "did_work": did_work}
+    log.info("brief done", extra=payload)
+    return payload
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.dispatch_alert",
+    queue="reporting",
+    autoretry_for=(DeliveryError, OSError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=900,
+    retry_jitter=True,
+    max_retries=5,
+    acks_late=True,
+)
+def dispatch_alert(self: Task, alert_id: str, reason: str = "new") -> dict[str, Any]:
+    """L12: webhook / e-mail delivery to matching recipients (severity threshold +
+    jurisdiction). Retries transient failures; DISPATCH_ENABLED=false logs only."""
+    from app.db.models import Alert
+
+    with sync_session() as session:
+        alert = session.get(Alert, alert_id)
+        if alert is None:
+            raise LookupError(f"unknown alert {alert_id!r}")
+        try:
+            result = _dispatch_alert(session, alert, reason=reason)
+        finally:
+            session.commit()  # keep the dispatch log even when re-raising for retry
+    payload = {
+        "alert_id": alert_id,
+        "reason": reason,
+        "sent": result.sent,
+        "skipped": result.skipped,
+        "failed": result.failed,
+    }
+    log.info("dispatch task done", extra=payload)
+    return payload
+
+
+@celery_app.task(name="app.workers.tasks.process_alerts", queue="processing")
+def process_alerts(
+    water_body_id: str, date_from: str, date_to: str | None = None, briefs: bool = False
+) -> dict[str, Any]:
+    """Backfill alerts for every scored scene in [date_from, date_to], oldest
+    first so dedup windows behave as they would have in real time. Briefs and
+    dispatches are not enqueued unless ``briefs`` is set (backfills should not page anyone)."""
+    from app.db.models import WaterBody
+    from app.services.l09_fusion.service import anomaly_scenes
+
+    with sync_session() as session:
+        wb = session.get(WaterBody, water_body_id)
+        if wb is None:
+            raise LookupError(f"unknown water body {water_body_id!r}")
+        scenes = anomaly_scenes(
+            session,
+            water_body_id,
+            date.fromisoformat(date_from),
+            date.fromisoformat(date_to) if date_to else date.fromisoformat(date_from),
+        )
+        created: list[str] = []
+        updated: list[str] = []
+        for scene in scenes:
+            r = _assemble_scene(session, wb, scene)
+            created += r.created
+            updated += r.updated
+        session.commit()
+    if briefs:
+        for alert_id in dict.fromkeys(created + updated):
+            generate_brief.delay(alert_id)
+    payload = {
+        "water_body_id": water_body_id,
+        "scenes": len(scenes),
+        "created": created,
+        "updated": sorted(set(updated)),
+    }
+    log.info("process alerts done", extra=payload)
     return payload
 
 

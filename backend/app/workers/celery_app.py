@@ -1,4 +1,4 @@
-"""Celery application. Queues: default, ingestion, processing (S12 adds scoring/reporting)."""
+"""Celery application. Queues: default, ingestion, processing, reporting (briefs + delivery)."""
 
 from celery import Celery
 from celery.schedules import crontab
@@ -36,6 +36,10 @@ celery_app.conf.update(
         "app.workers.tasks.score_candidates": {"queue": "processing"},
         "app.workers.tasks.process_scores": {"queue": "processing"},
         "app.workers.tasks.train_priority_model": {"queue": "processing"},
+        "app.workers.tasks.assemble_alerts": {"queue": "processing"},
+        "app.workers.tasks.process_alerts": {"queue": "processing"},
+        "app.workers.tasks.generate_brief": {"queue": "reporting"},
+        "app.workers.tasks.dispatch_alert": {"queue": "reporting"},
         "app.workers.tasks.build_baselines": {"queue": "processing"},
         "app.workers.tasks.rebuild_all_baselines": {"queue": "processing"},
         "app.workers.tasks.sync_rainfall": {"queue": "ingestion"},
