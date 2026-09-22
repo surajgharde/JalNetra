@@ -155,6 +155,12 @@ class Settings(BaseSettings):
     alerts_after_scoring: bool = True  # score_candidates enqueues assemble_alerts
     brief_prefix: str = "briefs"  # MinIO key prefix for investigation-brief PDFs
     brief_series_months: int = 12  # evidence timeline span in the brief
+    report_prefix: str = "reports"  # MinIO key prefix for finished pipeline-run reports
+    report_max_day_pages: int = 60  # per-day pages in a run report (most recent first)
+    report_image_px: int = 640  # longest edge of each satellite image in the report
+    report_satellite_source: Literal["auto", "gee", "cache"] = (
+        "auto"  # per-day image: Earth Engine true colour, or false colour from cached bands
+    )
     public_base_url: str = "http://localhost:8000"  # absolute links in e-mails / webhooks
     dispatch_enabled: bool = False  # master switch: never deliver from a dev box by accident
     dispatch_timeout_s: float = 15.0

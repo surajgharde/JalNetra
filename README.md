@@ -133,9 +133,10 @@ TiTiler renders the water-mask and indicator chips, and the dashboard shows all
 - No alert has yet been raised from real data on this box: the seasonal
   baselines need a multi-year backfill first (`make backfill`).
 - The `ops` profile (Flower, Prometheus, Grafana) has not been exercised live.
-- The Google Earth Engine source and live layer are unit-tested against stubbed
-  responses only; they have not yet run against a real Earth Engine project
-  (needs a service-account key, see below).
+- Google Earth Engine was verified live on 2026-09-22 (project registered, user
+  sign-in): a `computePixels` read is pixel-identical to the Earth Search COG
+  read of the same scene and 3x faster; the live layer and the report thumbnails
+  render. A full `Run pipeline` under `STAC_SOURCE=gee` has not been exercised.
 
 ## Water body registry
 
@@ -360,6 +361,34 @@ curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: applica
   e-mail on creation and on escalation only. `DISPATCH_ENABLED=false` by
   default: a dev box logs `skipped` rows and never pages a regional office.
 - Worker queue `reporting` carries briefs and dispatches.
+
+## Pipeline-run report (export)
+
+```sh
+curl -o run.pdf "http://localhost:8000/api/v1/jobs/<job_id>/report.pdf"   # ?refresh=true re-renders
+curl -o run.csv "http://localhost:8000/api/v1/jobs/<job_id>/report.csv"
+```
+
+Every pipeline run can be exported from the **Report** / **CSV** buttons next to
+the run readout (or the two endpoints above):
+
+- **PDF** — a summary page (run header, one row per Sentinel-2 pass day with
+  status, cloud, coverage, water extent, body-wide indicator means, flagged zones,
+  max priority and 72 h rain; indicator and water-extent trend charts; alerts
+  first raised in the window; the disclaimer), then **one page per observed day**
+  with that day's satellite image, the detected-water mask, the turbidity and
+  chlorophyll rasters (same ramps as the map) and a per-zone table (indicator
+  means, coverage, baseline z-scores with the flagged ones in bold, baseline
+  status, severity, priority, alert id or suppression reason).
+- **CSV** — one row per (day, zone) with every field above, for spreadsheets.
+- The satellite image is Earth Engine true colour when GEE is enabled
+  (`REPORT_SATELLITE_SOURCE=auto|gee|cache`); otherwise a NIR false-colour
+  composite from the cached bands (the pipeline never stores blue).
+- A finished job's report is rendered once and stored at
+  `reports/{job_id}.{pdf,csv}` in MinIO; a running job renders live ("partial").
+  Per-day pages are capped at `REPORT_MAX_DAY_PAGES` (60) most recent days; the
+  table and the CSV always cover the whole window. Khadakwasla, 5 days: ~25 s,
+  3 MB (five Earth Engine thumbnails); cached copy in 70 ms.
 
 ## Backend API and tile server (L2)
 

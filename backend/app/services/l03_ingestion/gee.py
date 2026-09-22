@@ -633,6 +633,38 @@ def live_map(
     )
 
 
+def truecolor_thumbnail(
+    bbox: tuple[float, float, float, float],
+    day: date,
+    *,
+    px: int = 640,
+    settings: Settings | None = None,
+) -> bytes | None:
+    """PNG of the true-colour Sentinel-2 mosaic over ``bbox`` on ``day`` (all tiles
+    of that pass, unmasked), or ``None`` when no pass exists. For reports."""
+    settings = settings or get_settings()
+    initialize(settings)
+    import ee
+    import httpx
+
+    region = ee.Geometry.Rectangle(list(bbox), "EPSG:4326", False)
+    coll = (
+        ee.ImageCollection(settings.gee_collection)
+        .filterBounds(region)
+        .filterDate(day.isoformat(), (day + timedelta(days=1)).isoformat())
+    )
+    try:
+        if not coll.size().getInfo():
+            return None
+        styled = _styled(coll.mosaic(), LIVE_VIS["truecolor"])
+        url = styled.getThumbURL({"region": region, "dimensions": px, "format": "png"})
+        r = httpx.get(url, timeout=settings.gee_timeout_s, follow_redirects=True)
+        r.raise_for_status()
+        return bytes(r.content)
+    except Exception as exc:
+        raise GEEError(f"gee: thumbnail failed for {day}: {exc}") from exc
+
+
 def live_map_cache_parts(bbox: tuple[float, float, float, float], **kw: Any) -> tuple[Any, ...]:
     """Stable cache-key parts: bbox rounded to ~100 m so map pans do not thrash the cache."""
     rounded = tuple(round(v, 3) for v in bbox)

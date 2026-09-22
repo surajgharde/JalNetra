@@ -79,6 +79,8 @@ export const api = {
     get: (id: string) => request<JobOut>(`${V1}/jobs/${id}`),
     list: (q?: { water_body_id?: string; limit?: number }) =>
       request<JobList>(`${V1}/jobs`, { query: q }),
+    /** Analysis report of a run: summary + one page per observed day (satellite image, rasters, zone data). */
+    reportUrl: (id: string, fmt: "pdf" | "csv") => `${V1}/jobs/${id}/report.${fmt}`,
   },
 
   /** Live Sentinel-2 imagery rendered by Google Earth Engine (no ingestion involved). */

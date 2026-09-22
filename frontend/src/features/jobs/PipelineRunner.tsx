@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { format, subDays } from "date-fns";
-import { CheckCircle2, Loader2, Play, XCircle } from "lucide-react";
+import { CheckCircle2, FileDown, Loader2, Play, Table2, XCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@/api/client";
 import { useJob, useStartIngest, useWaterBody } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABELS } from "@/lib/format";
@@ -97,6 +98,30 @@ function JobReadout({
         </span>
       )}
       {job.error && <span className="max-w-[12rem] truncate text-destructive" title={job.error}>{job.error}</span>}
+      {job.scenes_found > 0 && (
+        <span className="flex items-center gap-1 border-l pl-2">
+          <a
+            href={api.jobs.reportUrl(job.job_id, "pdf")}
+            download
+            className="flex items-center gap-1 rounded border px-1.5 py-0.5 hover:bg-muted"
+            title={
+              running
+                ? "Report of what has been processed so far (re-download when the run finishes)"
+                : "PDF: summary, trends, and one page per observed day with the satellite image, water mask, turbidity and chlorophyll rasters and per-zone data"
+            }
+          >
+            <FileDown className="h-3.5 w-3.5" /> Report{running ? " (partial)" : ""}
+          </a>
+          <a
+            href={api.jobs.reportUrl(job.job_id, "csv")}
+            download
+            className="flex items-center gap-1 rounded border px-1.5 py-0.5 hover:bg-muted"
+            title="CSV: one row per day and zone with every indicator, z-score, priority and alert id"
+          >
+            <Table2 className="h-3.5 w-3.5" /> CSV
+          </a>
+        </span>
+      )}
       {!running && (
         <button className="text-muted-foreground hover:text-foreground" onClick={onDismiss} aria-label="Dismiss">
           ×
