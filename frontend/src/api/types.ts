@@ -54,6 +54,8 @@ export type ValidationList = S["ValidationList"];
 export type LabResults = S["LabResults"];
 export type ValidationSummary = S["ValidationSummary"];
 
+export type Methodology = S["Methodology"];
+export type MethodologyStep = S["Step"];
 export type LiveImagery = S["LiveImageryOut"];
 export type ImageryStatus = S["ImageryStatus"];
 export type LiveVis = S["LiveVisOut"];

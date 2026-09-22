@@ -30,6 +30,7 @@ CONTRACT_PATHS = {
     "/api/v1/jobs/{job_id}/report.csv": {"get"},
     "/api/v1/imagery/live": {"get"},
     "/api/v1/imagery/status": {"get"},
+    "/api/v1/methodology": {"get"},
     "/tiles/{layer}/{water_body_id}/{on}/{z}/{x}/{y}.png": {"get"},
     "/health": {"get"},
 }
@@ -91,3 +92,23 @@ def test_stage_count_and_app_serves_styles() -> None:
         assert app.state.limiter is not None  # slowapi wired; default limit from settings
         bad = client.get("/tiles/chip/not-a-chip/10/1/1.png")
         assert bad.status_code == 400
+
+
+async def test_methodology_reads_from_the_registry(client) -> None:  # type: ignore[no-untyped-def]
+    r = await client.get("/api/v1/methodology")
+    assert r.status_code == 200
+    m = r.json()
+    assert m["workflow"] == ["Monitoring", "Detection", "Prioritisation", "Investigation support"]
+    keys = {i["key"] for i in m["indicators"]}
+    assert keys == {
+        "ndti_turbidity",
+        "ndci_chlorophyll",
+        "fai_algal",
+        "sediment_proxy",
+        "mndwi_extent",
+    }
+    for ind in m["indicators"]:
+        assert ind["formula"] and len(ind["scientific_basis"]) > 80 and ind["observes"]
+    assert "Otsu" in " ".join(m["water_detection"]["details"])
+    assert "laboratory" in m["product_boundary"] and m["disclaimer"]
+    assert any("z_ndti_turbidity" in d for d in m["prioritisation"]["details"])

@@ -11,6 +11,7 @@ import type {
   AlertStatusUpdate,
   HealthResponse,
   ImageryStatus,
+  Methodology,
   IndicatorsResponse,
   IngestJobRequest,
   JobList,
@@ -82,6 +83,9 @@ export const api = {
     /** Analysis report of a run: summary + one page per observed day (satellite image, rasters, zone data). */
     reportUrl: (id: string, fmt: "pdf" | "csv") => `${V1}/jobs/${id}/report.${fmt}`,
   },
+
+  /** How the platform works, generated from the code that does the work. */
+  methodology: () => request<Methodology>(`${V1}/methodology`),
 
   /** Live Sentinel-2 imagery rendered by Google Earth Engine (no ingestion involved). */
   imagery: {

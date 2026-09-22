@@ -469,6 +469,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{job_id}/report.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Report Pdf
+         * @description The analysis report for a pipeline run: a summary page (every day in the
+         *     window, trends, alerts) then one page per observed day with that day's
+         *     satellite image, detected water, turbidity and chlorophyll rasters and the
+         *     per-zone data. Rendered live while the job runs; stored once it is done
+         *     (``refresh=true`` re-renders).
+         */
+        get: operations["job_report_pdf_api_v1_jobs__job_id__report_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/report.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Report Csv
+         * @description The same run as data: one row per (day, zone) with scene, coverage, water
+         *     extent, rainfall, every indicator mean, baseline z-scores, anomaly and
+         *     priority fields, and the alert id when one was raised.
+         */
+        get: operations["job_report_csv_api_v1_jobs__job_id__report_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/imagery/status": {
         parameters: {
             query?: never;
@@ -507,6 +553,26 @@ export interface paths {
          *     (MNDWI > 0) so the colour ramp only ever paints the lake.
          */
         get: operations["live_imagery_api_v1_imagery_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/methodology": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Methodology
+         * @description The end-to-end method, with the scientific basis and formula of each indicator.
+         */
+        get: operations["methodology_api_v1_methodology_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -828,6 +894,30 @@ export interface components {
             error?: string | null;
             /** Visualisations */
             visualisations: components["schemas"]["LiveVisOut"][];
+        };
+        /** IndicatorDoc */
+        IndicatorDoc: {
+            /** Key */
+            key: string;
+            /** Display Name */
+            display_name: string;
+            /** Formula */
+            formula: string;
+            /** Required Bands */
+            required_bands: string[];
+            /** Valid Range */
+            valid_range: number[];
+            /** Units */
+            units: string;
+            /** Water Only */
+            water_only: boolean;
+            /** Scientific Basis */
+            scientific_basis: string;
+            /**
+             * Observes
+             * @description Which problem-statement indicator this covers
+             */
+            observes: string;
         };
         /** IndicatorReading */
         IndicatorReading: {
@@ -1170,6 +1260,27 @@ export interface components {
                 number
             ] | null;
         };
+        /** Methodology */
+        Methodology: {
+            /** Workflow */
+            workflow: string[];
+            /** Product Boundary */
+            product_boundary: string;
+            /** Disclaimer */
+            disclaimer: string;
+            data: components["schemas"]["Step"];
+            water_detection: components["schemas"]["Step"];
+            /** Indicators */
+            indicators: components["schemas"]["IndicatorDoc"][];
+            temporal_monitoring: components["schemas"]["Step"];
+            anomaly_detection: components["schemas"]["Step"];
+            prioritisation: components["schemas"]["Step"];
+            alerts: components["schemas"]["Step"];
+            explainability: components["schemas"]["Step"];
+            validation_loop: components["schemas"]["Step"];
+            /** Limitations */
+            limitations: string[];
+        };
         /**
          * ObservationItem
          * @example {
@@ -1351,6 +1462,21 @@ export interface components {
             total: number;
             /** Pct */
             pct: number;
+        };
+        /** Step */
+        Step: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Details */
+            details: string[];
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
         };
         /** TimelineEntry */
         TimelineEntry: {
@@ -2626,6 +2752,73 @@ export interface operations {
             };
         };
     };
+    job_report_pdf_api_v1_jobs__job_id__report_pdf_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_report_csv_api_v1_jobs__job_id__report_csv_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     imagery_status_api_v1_imagery_status_get: {
         parameters: {
             query?: never;
@@ -2683,6 +2876,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    methodology_api_v1_methodology_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Methodology"];
                 };
             };
         };

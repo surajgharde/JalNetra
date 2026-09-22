@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Activity, Droplets, ListOrdered } from "lucide-react";
+import { Activity, BookOpen, Droplets, ListOrdered } from "lucide-react";
 import { NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import { useHealth } from "@/api/hooks";
 import { AlertQueue } from "@/features/alerts/AlertQueue";
@@ -10,6 +10,7 @@ import { SeriesChart } from "@/features/dashboard/SeriesChart";
 import { TimelineScrubber } from "@/features/dashboard/TimelineScrubber";
 import { WaterBodyList } from "@/features/dashboard/WaterBodyList";
 import { PipelineRunner } from "@/features/jobs/PipelineRunner";
+import { MethodologyPage } from "@/features/methodology/MethodologyPage";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/store/ui";
 
@@ -101,6 +102,9 @@ export default function App() {
           <NavLink to="/alerts" className={navClass}>
             <ListOrdered className="h-4 w-4" /> Priority queue
           </NavLink>
+          <NavLink to="/methodology" className={navClass}>
+            <BookOpen className="h-4 w-4" /> Methodology
+          </NavLink>
         </nav>
         <div className="ml-auto flex items-center gap-4">
           <PipelineRunner />
@@ -111,6 +115,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/alerts" element={<AlertQueue />} />
+          <Route path="/methodology" element={<MethodologyPage />} />
         </Routes>
       </main>
       <UrlSync />

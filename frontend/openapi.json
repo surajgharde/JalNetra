@@ -1606,6 +1606,114 @@
     }
    }
   },
+  "/api/v1/jobs/{job_id}/report.pdf": {
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Job Report Pdf",
+    "description": "The analysis report for a pipeline run: a summary page (every day in the\nwindow, trends, alerts) then one page per observed day with that day's\nsatellite image, detected water, turbidity and chlorophyll rasters and the\nper-zone data. Rendered live while the job runs; stored once it is done\n(``refresh=true`` re-renders).",
+    "operationId": "job_report_pdf_api_v1_jobs__job_id__report_pdf_get",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     },
+     {
+      "name": "refresh",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Refresh"
+      }
+     },
+     {
+      "name": "download",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": true,
+       "title": "Download"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/pdf": {}
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/{job_id}/report.csv": {
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Job Report Csv",
+    "description": "The same run as data: one row per (day, zone) with scene, coverage, water\nextent, rainfall, every indicator mean, baseline z-scores, anomaly and\npriority fields, and the alert id when one was raised.",
+    "operationId": "job_report_csv_api_v1_jobs__job_id__report_csv_get",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     },
+     {
+      "name": "refresh",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Refresh"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "text/csv": {}
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/imagery/status": {
    "get": {
     "tags": [
@@ -1734,6 +1842,28 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/methodology": {
+   "get": {
+    "tags": [
+     "methodology"
+    ],
+    "summary": "Methodology",
+    "description": "The end-to-end method, with the scientific basis and formula of each indicator.",
+    "operationId": "methodology_api_v1_methodology_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Methodology"
         }
        }
       }
@@ -2557,6 +2687,66 @@
     ],
     "title": "ImageryStatus"
    },
+   "IndicatorDoc": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "display_name": {
+      "type": "string",
+      "title": "Display Name"
+     },
+     "formula": {
+      "type": "string",
+      "title": "Formula"
+     },
+     "required_bands": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Required Bands"
+     },
+     "valid_range": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Valid Range"
+     },
+     "units": {
+      "type": "string",
+      "title": "Units"
+     },
+     "water_only": {
+      "type": "boolean",
+      "title": "Water Only"
+     },
+     "scientific_basis": {
+      "type": "string",
+      "title": "Scientific Basis"
+     },
+     "observes": {
+      "type": "string",
+      "title": "Observes",
+      "description": "Which problem-statement indicator this covers"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "display_name",
+     "formula",
+     "required_bands",
+     "valid_range",
+     "units",
+     "water_only",
+     "scientific_basis",
+     "observes"
+    ],
+    "title": "IndicatorDoc"
+   },
    "IndicatorReading": {
     "properties": {
      "key": {
@@ -3303,6 +3493,80 @@
     ],
     "title": "LiveVisOut"
    },
+   "Methodology": {
+    "properties": {
+     "workflow": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Workflow"
+     },
+     "product_boundary": {
+      "type": "string",
+      "title": "Product Boundary"
+     },
+     "disclaimer": {
+      "type": "string",
+      "title": "Disclaimer"
+     },
+     "data": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "water_detection": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "indicators": {
+      "items": {
+       "$ref": "#/components/schemas/IndicatorDoc"
+      },
+      "type": "array",
+      "title": "Indicators"
+     },
+     "temporal_monitoring": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "anomaly_detection": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "prioritisation": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "alerts": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "explainability": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "validation_loop": {
+      "$ref": "#/components/schemas/Step"
+     },
+     "limitations": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Limitations"
+     }
+    },
+    "type": "object",
+    "required": [
+     "workflow",
+     "product_boundary",
+     "disclaimer",
+     "data",
+     "water_detection",
+     "indicators",
+     "temporal_monitoring",
+     "anomaly_detection",
+     "prioritisation",
+     "alerts",
+     "explainability",
+     "validation_loop",
+     "limitations"
+    ],
+    "title": "Methodology"
+   },
    "ObservationItem": {
     "properties": {
      "scene_id": {
@@ -3722,6 +3986,42 @@
      "pct"
     ],
     "title": "StageProgress"
+   },
+   "Step": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary"
+     },
+     "details": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Details"
+     },
+     "parameters": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Parameters"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "summary",
+     "details"
+    ],
+    "title": "Step"
    },
    "TimelineEntry": {
     "properties": {
