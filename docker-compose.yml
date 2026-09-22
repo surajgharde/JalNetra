@@ -27,6 +27,9 @@ x-backend: &backend
     <<: *backend-env
   volumes:
     - ./backend:/app
+    # Earth Engine sign-in from `earthengine authenticate` on the host (dev). A
+    # service-account key via GEE_SERVICE_ACCOUNT_KEY takes precedence when set.
+    - ${EARTHENGINE_CREDENTIALS_DIR:-~/.config/earthengine}:/root/.config/earthengine:ro
   depends_on:
     postgres:
       condition: service_healthy

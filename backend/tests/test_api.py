@@ -26,6 +26,8 @@ CONTRACT_PATHS = {
     "/api/v1/validations": {"get", "post"},
     "/api/v1/jobs/ingest": {"post"},
     "/api/v1/jobs/{job_id}": {"get"},
+    "/api/v1/imagery/live": {"get"},
+    "/api/v1/imagery/status": {"get"},
     "/tiles/{layer}/{water_body_id}/{on}/{z}/{x}/{y}.png": {"get"},
     "/health": {"get"},
 }

@@ -138,6 +138,14 @@ def read_windowed_bands(
     buffer_m: float = BUFFER_M,
     bands: tuple[str, ...] = BANDS,
 ) -> WindowedBands:
+    if candidate.assets[bands[0]].startswith("gee://"):
+        # Earth Engine scenes have no COGs; pixels come through computePixels instead.
+        from app.services.l03_ingestion.gee import read_windowed_bands_gee
+
+        return read_windowed_bands_gee(
+            candidate, aoi_4326, water_body_id, buffer_m=buffer_m, bands=bands
+        )
+
     started = time.perf_counter()
     env: dict[str, str | int | bool] = {**GDAL_ENV, **candidate.gdal_env}
 

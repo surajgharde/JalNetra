@@ -4,7 +4,13 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { AlertFilters, AlertStatusUpdate, IngestJobRequest, ValidationIn } from "./types";
+import type {
+  AlertFilters,
+  AlertStatusUpdate,
+  IngestJobRequest,
+  LiveImageryQuery,
+  ValidationIn,
+} from "./types";
 
 export const keys = {
   health: ["health"] as const,
@@ -22,6 +28,8 @@ export const keys = {
   job: (id: string) => ["job", id] as const,
   jobs: ["jobs"] as const,
   tileStyles: ["tile-styles"] as const,
+  imageryStatus: ["imagery-status"] as const,
+  liveImagery: (q: LiveImageryQuery) => ["live-imagery", q] as const,
 };
 
 export const useHealth = () =>
@@ -81,6 +89,19 @@ export const useValidations = (alertId?: string) =>
 
 export const useTileStyles = () =>
   useQuery({ queryKey: keys.tileStyles, queryFn: api.tiles.styles, staleTime: Infinity });
+
+export const useImageryStatus = () =>
+  useQuery({ queryKey: keys.imageryStatus, queryFn: api.imagery.status, staleTime: 5 * 60_000 });
+
+/** A styled Earth Engine map id; the backend caches it, so the map id is stable for ~1 h. */
+export const useLiveImagery = (q: LiveImageryQuery | null) =>
+  useQuery({
+    queryKey: keys.liveImagery(q ?? { bbox: "" }),
+    queryFn: () => api.imagery.live(q!),
+    enabled: !!q,
+    staleTime: 30 * 60_000,
+    retry: false, // a 404 (no pass in the window) or 503 (GEE off) will not change on retry
+  });
 
 export function useSetAlertStatus(alertId: string) {
   const qc = useQueryClient();

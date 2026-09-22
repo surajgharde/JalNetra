@@ -2,6 +2,7 @@ import { Layers } from "lucide-react";
 import { RASTER_LAYERS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/store/ui";
+import { LiveImageryControls } from "./LiveImagery";
 
 export function LayerToggles({ disabled }: { disabled: boolean }) {
   const layers = useUi((s) => s.layers);
@@ -41,6 +42,7 @@ export function LayerToggles({ disabled }: { disabled: boolean }) {
           </label>
         ))}
       </div>
+      <LiveImageryControls />
     </div>
   );
 }

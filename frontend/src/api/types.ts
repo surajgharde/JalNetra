@@ -54,6 +54,10 @@ export type ValidationList = S["ValidationList"];
 export type LabResults = S["LabResults"];
 export type ValidationSummary = S["ValidationSummary"];
 
+export type LiveImagery = S["LiveImageryOut"];
+export type ImageryStatus = S["ImageryStatus"];
+export type LiveVis = S["LiveVisOut"];
+
 export type IngestJobRequest = S["IngestJobRequest"];
 export type JobOut = S["JobOut"];
 export type JobList = S["JobList"];
@@ -64,6 +68,17 @@ export type AlertStatus = AlertOut["status"];
 export type BodyStatus = WaterBodyListItem["status"];
 export type JobStatus = JobOut["status"];
 export type Verdict = NonNullable<ValidationOut["verdict"]>;
+export type LiveVisKey = "truecolor" | "falsecolor" | "ndti" | "ndci" | "mndwi";
+
+/** Query parameters accepted by GET /api/v1/imagery/live. */
+export interface LiveImageryQuery {
+  bbox: string; // minx,miny,maxx,maxy
+  vis?: LiveVisKey;
+  date?: string;
+  days?: number;
+  max_cloud?: number;
+  composite?: boolean;
+}
 
 /** Query parameters accepted by GET /api/v1/alerts and /alerts.geojson. */
 export interface AlertFilters {

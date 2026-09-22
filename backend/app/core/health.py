@@ -43,15 +43,19 @@ async def check_minio(settings: Settings) -> None:
 
 
 async def check_stac(settings: Settings) -> None:
-    """The configured STAC source answers its landing page (no search, no auth)."""
-    url = (
-        settings.earth_search_url
-        if settings.stac_source == "earth-search"
-        else settings.cdse_stac_url
-    )
+    """The configured STAC source answers its landing page (no search, no auth).
+    With Earth Engine as the primary source the STAC probe covers the fallback."""
+    url = settings.cdse_stac_url if settings.stac_source == "cdse" else settings.earth_search_url
     async with httpx.AsyncClient(timeout=settings.health_check_timeout_s) as client:
         r = await client.get(url, follow_redirects=True)
         r.raise_for_status()
+
+
+async def check_gee(settings: Settings) -> None:
+    """Earth Engine session initialises and answers one trivial computation."""
+    from app.services.l03_ingestion.gee import ping
+
+    await asyncio.to_thread(ping, settings)
 
 
 CHECKS: dict[str, Check] = {
@@ -59,6 +63,10 @@ CHECKS: dict[str, Check] = {
     "redis": check_redis,
     "minio": check_minio,
     "stac": check_stac,
+}
+# Probes that only run when the feature is switched on.
+OPTIONAL_CHECKS: dict[str, tuple[Callable[[Settings], bool], Check]] = {
+    "gee": (lambda s: s.gee_enabled, check_gee),
 }
 
 
@@ -82,6 +90,8 @@ def _elapsed_ms(started: float) -> float:
 
 
 async def run_health_checks(settings: Settings) -> dict[str, ServiceStatus]:
-    names = list(CHECKS)
-    results = await asyncio.gather(*(_run(n, CHECKS[n], settings) for n in names))
+    checks = dict(CHECKS)
+    checks.update({n: c for n, (enabled, c) in OPTIONAL_CHECKS.items() if enabled(settings)})
+    names = list(checks)
+    results = await asyncio.gather(*(_run(n, checks[n], settings) for n in names))
     return dict(zip(names, results, strict=True))

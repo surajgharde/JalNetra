@@ -294,7 +294,8 @@ export interface paths {
         /**
          * Update Status
          * @description Field workflow: open -> investigating -> validated | dismissed (any order is allowed;
-         *     the change is audited with who and why).
+         *     the change is audited with who and why). Requires ``X-API-Key``; the key's actor
+         *     label is recorded as ``by``.
          */
         patch: operations["update_status_api_v1_alerts__alert_id__status_patch"];
         trace?: never;
@@ -337,7 +338,7 @@ export interface paths {
          * @description Submit a field or lab result against an alert. The verdict is computed
          *     immediately (matched / not_matched / inconclusive), the alert's status is
          *     updated, and a field-confirmed normal reading is fed back into the
-         *     seasonal baseline.
+         *     seasonal baseline. Requires ``X-API-Key``; ``submitted_by`` is the key's actor.
          */
         post: operations["create_validation_api_v1_validations_post"];
         delete?: never;
@@ -394,10 +395,11 @@ export interface paths {
         get: operations["get_photo_api_v1_validations__validation_id__photo_get"];
         put?: never;
         /**
-         * Upload Photo
-         * @description Attach a site photo to a validation (stored in MinIO).
+         * Read Bounded
+         * @description Read the upload in chunks and stop as soon as it exceeds the limit, so an
+         *     oversized body is never fully buffered in memory.
          */
-        post: operations["upload_photo_api_v1_validations__validation_id__photo_post"];
+        post: operations["_read_bounded_api_v1_validations__validation_id__photo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -417,7 +419,11 @@ export interface paths {
          * Create Ingest Job
          * @description Enqueue ingestion for a water body and date range. Each ingested scene
          *     chains mask -> indicators -> anomalies -> scoring -> alerts on its own;
-         *     poll ``GET /jobs/{id}`` for the live readout.
+         *     poll ``GET /jobs/{id}`` for the live readout. Requires ``X-API-Key``.
+         *
+         *     The window is capped at ``job_max_span_days`` and a job that is already
+         *     queued or running for the same body and window is returned instead of
+         *     being enqueued twice.
          */
         post: operations["create_ingest_job_api_v1_jobs_ingest_post"];
         delete?: never;
@@ -455,6 +461,52 @@ export interface paths {
          * @description State, progress percent and the stage currently in flight.
          */
         get: operations["get_job_api_v1_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imagery/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Imagery Status
+         * @description Whether Earth Engine is switched on, configured and reachable, plus the
+         *     visualisations ``/imagery/live`` accepts.
+         */
+        get: operations["imagery_status_api_v1_imagery_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imagery/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live Imagery
+         * @description Styled XYZ tile template for the most recent Sentinel-2 image over ``bbox``.
+         *
+         *     ``mode=latest`` mosaics every tile of the newest pass day (unmasked, so
+         *     clouds are visible as clouds); ``composite=true`` returns the cloud-masked
+         *     median of all passes in the window. Index layers are masked to water
+         *     (MNDWI > 0) so the colour ramp only ever paints the lake.
+         */
+        get: operations["live_imagery_api_v1_imagery_live_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -609,12 +661,9 @@ export interface components {
             /** By */
             by?: string | null;
         };
-        /** Body_upload_photo_api_v1_validations__validation_id__photo_post */
-        Body_upload_photo_api_v1_validations__validation_id__photo_post: {
-            /**
-             * File
-             * @description JPEG, PNG or WebP, up to 15 MB
-             */
+        /** Body__read_bounded_api_v1_validations__validation_id__photo_post */
+        Body__read_bounded_api_v1_validations__validation_id__photo_post: {
+            /** File */
             file: string;
         };
         /** ContributionOut */
@@ -762,6 +811,23 @@ export interface components {
             services: {
                 [key: string]: components["schemas"]["ServiceStatus"];
             };
+        };
+        /** ImageryStatus */
+        ImageryStatus: {
+            /** Enabled */
+            enabled: boolean;
+            /** Configured */
+            configured: boolean;
+            /** Ok */
+            ok: boolean;
+            /** Project */
+            project: string | null;
+            /** Collection */
+            collection: string;
+            /** Error */
+            error?: string | null;
+            /** Visualisations */
+            visualisations: components["schemas"]["LiveVisOut"][];
         };
         /** IndicatorReading */
         IndicatorReading: {
@@ -1012,6 +1078,97 @@ export interface components {
              * @description deepest stage reached: ingested|masked|indicators|anomalies|scored|alerted
              */
             stage: string;
+        };
+        /**
+         * LiveImageryOut
+         * @example {
+         *       "attribution": "Contains modified Copernicus Sentinel data, processed in Google Earth Engine",
+         *       "cached": false,
+         *       "cloud_pct": 8.4,
+         *       "collection": "COPERNICUS/S2_SR_HARMONIZED",
+         *       "map_id": "projects/jalnetra/maps/abc",
+         *       "mode": "latest",
+         *       "scene_count": 2,
+         *       "scene_date": "2026-09-19",
+         *       "tile_url": "https://earthengine.googleapis.com/v1/projects/jalnetra/maps/abc/tiles/{z}/{x}/{y}",
+         *       "vis": "truecolor",
+         *       "window_from": "2026-08-22",
+         *       "window_to": "2026-09-21"
+         *     }
+         */
+        LiveImageryOut: {
+            /** Vis */
+            vis: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "latest" | "composite";
+            /**
+             * Tile Url
+             * @description XYZ template with {z}/{x}/{y}, served by Google
+             */
+            tile_url: string;
+            /** Map Id */
+            map_id: string;
+            /**
+             * Scene Date
+             * Format: date
+             * @description Latest Sentinel-2 pass rendered
+             */
+            scene_date: string;
+            /**
+             * Scene Count
+             * @description Passes contributing to the image
+             */
+            scene_count: number;
+            /**
+             * Cloud Pct
+             * @description Mean tile-level cloud cover of those passes
+             */
+            cloud_pct?: number | null;
+            /**
+             * Window From
+             * Format: date
+             */
+            window_from: string;
+            /**
+             * Window To
+             * Format: date
+             */
+            window_to: string;
+            /** Collection */
+            collection: string;
+            /** Attribution */
+            attribution: string;
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+        };
+        /** LiveVisOut */
+        LiveVisOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "rgb" | "index";
+            /** Water Only */
+            water_only: boolean;
+            /** Description */
+            description: string;
+            /** Palette */
+            palette?: string[];
+            /** Range */
+            range?: [
+                number,
+                number
+            ] | null;
         };
         /**
          * ObservationItem
@@ -2337,18 +2494,18 @@ export interface operations {
             };
         };
     };
-    upload_photo_api_v1_validations__validation_id__photo_post: {
+    _read_bounded_api_v1_validations__validation_id__photo_post: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                validation_id: number;
+            query: {
+                max_bytes: number;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_upload_photo_api_v1_validations__validation_id__photo_post"];
+                "multipart/form-data": components["schemas"]["Body__read_bounded_api_v1_validations__validation_id__photo_post"];
             };
         };
         responses: {
@@ -2456,6 +2613,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    imagery_status_api_v1_imagery_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageryStatus"];
+                };
+            };
+        };
+    };
+    live_imagery_api_v1_imagery_live_get: {
+        parameters: {
+            query: {
+                /** @description minx,miny,maxx,maxy in WGS84 (lon/lat) */
+                bbox: string;
+                /** @description truecolor | falsecolor | ndti | ndci | mndwi */
+                vis?: string;
+                /** @description End of the window; default today */
+                date?: string | null;
+                /** @description Lookback window in days */
+                days?: number;
+                max_cloud?: number;
+                /** @description Cloud-masked median of the window instead of the latest pass */
+                composite?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveImageryOut"];
                 };
             };
             /** @description Validation Error */

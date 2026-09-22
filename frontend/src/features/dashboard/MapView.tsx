@@ -8,6 +8,7 @@ import { Disclaimer } from "@/components/Disclaimer";
 import { RASTER_LAYERS, severityColor } from "@/lib/format";
 import { useUi } from "@/store/ui";
 import { LayerToggles } from "./LayerToggles";
+import { LiveImageryLayer } from "./LiveImagery";
 
 const MAHARASHTRA_CENTER: [number, number] = [18.9, 75.5];
 
@@ -74,6 +75,7 @@ export function MapView() {
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <FitToBody bbox={body.data?.bbox} />
+        <LiveImageryLayer />
         {boundary && (
           <GeoJSON
             key={`b-${body.data?.id}`}

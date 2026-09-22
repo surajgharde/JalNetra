@@ -4,6 +4,7 @@
 * ``CDSESource`` -- Copernicus Data Space Ecosystem STAC. Search is public; asset
   reads need an OAuth2 client-credentials token, refreshed on expiry and passed
   to GDAL as a bearer header.
+* ``GEESource`` (``gee.py``) -- Google Earth Engine, opt-in via ``GEE_ENABLED``.
 * ``ChainedSource`` -- tries sources in order; the source that served a scene is
   recorded on the ``scenes`` row so an outage never silently changes provenance.
 """
@@ -337,15 +338,25 @@ class ChainedSource:
 
 
 def build_source(settings: Settings | None = None) -> STACSource:
+    """The configured primary source, chained with the others as fallbacks.
+    Google Earth Engine joins the chain only when ``GEE_ENABLED`` is set."""
     settings = settings or get_settings()
-    earth = EarthSearchSource(settings.earth_search_url)
-    cdse = CDSESource(
-        settings.cdse_stac_url,
-        settings.cdse_token_url,
-        settings.cdse_client_id,
-        settings.cdse_client_secret,
-    )
-    primary, secondary = (earth, cdse) if settings.stac_source == "earth-search" else (cdse, earth)
+    sources: dict[str, STACSource] = {
+        "earth-search": EarthSearchSource(settings.earth_search_url),
+        "cdse": CDSESource(
+            settings.cdse_stac_url,
+            settings.cdse_token_url,
+            settings.cdse_client_id,
+            settings.cdse_client_secret,
+        ),
+    }
+    if settings.gee_enabled:
+        from app.services.l03_ingestion.gee import build_gee_source
+
+        sources["gee"] = build_gee_source(settings)
+    if settings.stac_source not in sources:
+        raise ValueError(f"STAC_SOURCE={settings.stac_source!r} needs GEE_ENABLED=true")
+    primary = sources.pop(settings.stac_source)
     if not settings.stac_fallback:
         return primary
-    return ChainedSource([primary, secondary])
+    return ChainedSource([primary, *sources.values()])

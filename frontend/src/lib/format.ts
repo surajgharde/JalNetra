@@ -1,5 +1,5 @@
 import { format, parseISO } from "date-fns";
-import type { RasterLayer, Severity } from "@/api/types";
+import type { LiveVisKey, RasterLayer, Severity } from "@/api/types";
 
 export const fmtDate = (iso: string) => format(parseISO(iso), "d MMM yyyy");
 export const fmtDateShort = (iso: string) => format(parseISO(iso), "d MMM");
@@ -41,6 +41,17 @@ export const RASTER_LAYERS: { key: RasterLayer; label: string; swatch: string }[
   { key: "mndwi_extent", label: "Water extent", swatch: "linear-gradient(90deg,#f7fbff,#6baed6,#08306b)" },
   { key: "watermask", label: "Water mask", swatch: "#1f77b4" },
 ];
+
+/** Live Earth Engine visualisations (keys mirror the backend's LIVE_VIS). */
+export const LIVE_VIS_OPTIONS: { key: LiveVisKey; label: string; swatch: string }[] = [
+  { key: "truecolor", label: "True colour", swatch: "linear-gradient(90deg,#1e3a5f,#6b8e23,#d9c27e)" },
+  { key: "falsecolor", label: "False colour (NIR)", swatch: "linear-gradient(90deg,#1a1a4d,#c0392b,#f5b7b1)" },
+  { key: "ndti", label: "Turbidity (NDTI)", swatch: "linear-gradient(90deg,#fff7bc,#fe9929,#993404)" },
+  { key: "ndci", label: "Chlorophyll (NDCI)", swatch: "linear-gradient(90deg,#f7fcf5,#74c476,#00441b)" },
+  { key: "mndwi", label: "Water extent (MNDWI)", swatch: "linear-gradient(90deg,#f7fbff,#6baed6,#08306b)" },
+];
+/** Whole-state view when no water body is selected (Maharashtra, lon/lat). */
+export const MAHARASHTRA_BBOX: [number, number, number, number] = [72.6, 15.6, 80.9, 22.1];
 
 export const SEVERITY_ORDER: Severity[] = ["low", "medium", "high"];
 export const severityColor: Record<Severity, string> = {

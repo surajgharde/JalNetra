@@ -10,10 +10,13 @@ import type {
   AlertOut,
   AlertStatusUpdate,
   HealthResponse,
+  ImageryStatus,
   IndicatorsResponse,
   IngestJobRequest,
   JobList,
   JobOut,
+  LiveImagery,
+  LiveImageryQuery,
   ObservationList,
   RasterLayer,
   SeriesResponse,
@@ -76,6 +79,12 @@ export const api = {
     get: (id: string) => request<JobOut>(`${V1}/jobs/${id}`),
     list: (q?: { water_body_id?: string; limit?: number }) =>
       request<JobList>(`${V1}/jobs`, { query: q }),
+  },
+
+  /** Live Sentinel-2 imagery rendered by Google Earth Engine (no ingestion involved). */
+  imagery: {
+    status: () => request<ImageryStatus>(`${V1}/imagery/status`),
+    live: (q: LiveImageryQuery) => request<LiveImagery>(`${V1}/imagery/live`, { query: { ...q } }),
   },
 
   tiles: {

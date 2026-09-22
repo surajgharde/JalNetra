@@ -4,7 +4,7 @@
  * pipeline job being watched. Server data never lives here (TanStack Query).
  */
 import { create } from "zustand";
-import type { RasterLayer } from "@/api/types";
+import type { LiveVisKey, RasterLayer } from "@/api/types";
 
 interface UiState {
   waterBodyId: string | null;
@@ -16,6 +16,8 @@ interface UiState {
   showZones: boolean;
   alertId: string | null;
   jobId: string | null;
+  /** Live Sentinel-2 imagery from Google Earth Engine, independent of ingestion. */
+  live: { enabled: boolean; vis: LiveVisKey; composite: boolean; days: number };
 
   selectWaterBody: (id: string | null) => void;
   selectDate: (date: string | null) => void;
@@ -26,6 +28,7 @@ interface UiState {
   setShowZones: (v: boolean) => void;
   openAlert: (id: string | null) => void;
   watchJob: (id: string | null) => void;
+  setLive: (patch: Partial<UiState["live"]>) => void;
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -46,6 +49,7 @@ export const useUi = create<UiState>((set) => ({
   showZones: true,
   alertId: null,
   jobId: null,
+  live: { enabled: false, vis: "truecolor", composite: false, days: 30 },
 
   selectWaterBody: (id) => set({ waterBodyId: id, date: null, zoneId: null }),
   selectDate: (date) => set({ date }),
@@ -57,4 +61,5 @@ export const useUi = create<UiState>((set) => ({
   setShowZones: (showZones) => set({ showZones }),
   openAlert: (alertId) => set({ alertId }),
   watchJob: (jobId) => set({ jobId }),
+  setLive: (patch) => set((s) => ({ live: { ...s.live, ...patch } })),
 }));

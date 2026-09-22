@@ -1052,8 +1052,13 @@
      "alerts"
     ],
     "summary": "Update Status",
-    "description": "Field workflow: open -> investigating -> validated | dismissed (any order is allowed;\nthe change is audited with who and why).",
+    "description": "Field workflow: open -> investigating -> validated | dismissed (any order is allowed;\nthe change is audited with who and why). Requires ``X-API-Key``; the key's actor\nlabel is recorded as ``by``.",
     "operationId": "update_status_api_v1_alerts__alert_id__status_patch",
+    "security": [
+     {
+      "APIKeyHeader": []
+     }
+    ],
     "parameters": [
      {
       "name": "alert_id",
@@ -1150,8 +1155,13 @@
      "validations"
     ],
     "summary": "Create Validation",
-    "description": "Submit a field or lab result against an alert. The verdict is computed\nimmediately (matched / not_matched / inconclusive), the alert's status is\nupdated, and a field-confirmed normal reading is fed back into the\nseasonal baseline.",
+    "description": "Submit a field or lab result against an alert. The verdict is computed\nimmediately (matched / not_matched / inconclusive), the alert's status is\nupdated, and a field-confirmed normal reading is fed back into the\nseasonal baseline. Requires ``X-API-Key``; ``submitted_by`` is the key's actor.",
     "operationId": "create_validation_api_v1_validations_post",
+    "security": [
+     {
+      "APIKeyHeader": []
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -1348,17 +1358,17 @@
     "tags": [
      "validations"
     ],
-    "summary": "Upload Photo",
-    "description": "Attach a site photo to a validation (stored in MinIO).",
-    "operationId": "upload_photo_api_v1_validations__validation_id__photo_post",
+    "summary": " Read Bounded",
+    "description": "Read the upload in chunks and stop as soon as it exceeds the limit, so an\noversized body is never fully buffered in memory.",
+    "operationId": "_read_bounded_api_v1_validations__validation_id__photo_post",
     "parameters": [
      {
-      "name": "validation_id",
-      "in": "path",
+      "name": "max_bytes",
+      "in": "query",
       "required": true,
       "schema": {
        "type": "integer",
-       "title": "Validation Id"
+       "title": "Max Bytes"
       }
      }
     ],
@@ -1367,7 +1377,7 @@
      "content": {
       "multipart/form-data": {
        "schema": {
-        "$ref": "#/components/schemas/Body_upload_photo_api_v1_validations__validation_id__photo_post"
+        "$ref": "#/components/schemas/Body__read_bounded_api_v1_validations__validation_id__photo_post"
        }
       }
      }
@@ -1435,7 +1445,7 @@
      "jobs"
     ],
     "summary": "Create Ingest Job",
-    "description": "Enqueue ingestion for a water body and date range. Each ingested scene\nchains mask -> indicators -> anomalies -> scoring -> alerts on its own;\npoll ``GET /jobs/{id}`` for the live readout.",
+    "description": "Enqueue ingestion for a water body and date range. Each ingested scene\nchains mask -> indicators -> anomalies -> scoring -> alerts on its own;\npoll ``GET /jobs/{id}`` for the live readout. Requires ``X-API-Key``.\n\nThe window is capped at ``job_max_span_days`` and a job that is already\nqueued or running for the same body and window is returned instead of\nbeing enqueued twice.",
     "operationId": "create_ingest_job_api_v1_jobs_ingest_post",
     "requestBody": {
      "content": {
@@ -1468,7 +1478,12 @@
        }
       }
      }
-    }
+    },
+    "security": [
+     {
+      "APIKeyHeader": []
+     }
+    ]
    }
   },
   "/api/v1/jobs": {
@@ -1574,6 +1589,141 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/JobOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/imagery/status": {
+   "get": {
+    "tags": [
+     "imagery"
+    ],
+    "summary": "Imagery Status",
+    "description": "Whether Earth Engine is switched on, configured and reachable, plus the\nvisualisations ``/imagery/live`` accepts.",
+    "operationId": "imagery_status_api_v1_imagery_status_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ImageryStatus"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/imagery/live": {
+   "get": {
+    "tags": [
+     "imagery"
+    ],
+    "summary": "Live Imagery",
+    "description": "Styled XYZ tile template for the most recent Sentinel-2 image over ``bbox``.\n\n``mode=latest`` mosaics every tile of the newest pass day (unmasked, so\nclouds are visible as clouds); ``composite=true`` returns the cloud-masked\nmedian of all passes in the window. Index layers are masked to water\n(MNDWI > 0) so the colour ramp only ever paints the lake.",
+    "operationId": "live_imagery_api_v1_imagery_live_get",
+    "parameters": [
+     {
+      "name": "bbox",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "minx,miny,maxx,maxy in WGS84 (lon/lat)",
+       "title": "Bbox"
+      },
+      "description": "minx,miny,maxx,maxy in WGS84 (lon/lat)"
+     },
+     {
+      "name": "vis",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "truecolor | falsecolor | ndti | ndci | mndwi",
+       "default": "truecolor",
+       "title": "Vis"
+      },
+      "description": "truecolor | falsecolor | ndti | ndci | mndwi"
+     },
+     {
+      "name": "date",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "End of the window; default today",
+       "title": "Date"
+      },
+      "description": "End of the window; default today"
+     },
+     {
+      "name": "days",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "Lookback window in days",
+       "default": 30,
+       "title": "Days"
+      },
+      "description": "Lookback window in days"
+     },
+     {
+      "name": "max_cloud",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number",
+       "maximum": 100,
+       "minimum": 0,
+       "default": 60.0,
+       "title": "Max Cloud"
+      }
+     },
+     {
+      "name": "composite",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "description": "Cloud-masked median of the window instead of the latest pass",
+       "default": false,
+       "title": "Composite"
+      },
+      "description": "Cloud-masked median of the window instead of the latest pass"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LiveImageryOut"
         }
        }
       }
@@ -1989,20 +2139,19 @@
     ],
     "title": "AlertStatusUpdate"
    },
-   "Body_upload_photo_api_v1_validations__validation_id__photo_post": {
+   "Body__read_bounded_api_v1_validations__validation_id__photo_post": {
     "properties": {
      "file": {
       "type": "string",
       "contentMediaType": "application/octet-stream",
-      "title": "File",
-      "description": "JPEG, PNG or WebP, up to 15 MB"
+      "title": "File"
      }
     },
     "type": "object",
     "required": [
      "file"
     ],
-    "title": "Body_upload_photo_api_v1_validations__validation_id__photo_post"
+    "title": "Body__read_bounded_api_v1_validations__validation_id__photo_post"
    },
    "ContributionOut": {
     "properties": {
@@ -2348,6 +2497,65 @@
       "version": "0.1.0"
      }
     ]
+   },
+   "ImageryStatus": {
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "configured": {
+      "type": "boolean",
+      "title": "Configured"
+     },
+     "ok": {
+      "type": "boolean",
+      "title": "Ok"
+     },
+     "project": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project"
+     },
+     "collection": {
+      "type": "string",
+      "title": "Collection"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "visualisations": {
+      "items": {
+       "$ref": "#/components/schemas/LiveVisOut"
+      },
+      "type": "array",
+      "title": "Visualisations"
+     }
+    },
+    "type": "object",
+    "required": [
+     "enabled",
+     "configured",
+     "ok",
+     "project",
+     "collection",
+     "visualisations"
+    ],
+    "title": "ImageryStatus"
    },
    "IndicatorReading": {
     "properties": {
@@ -2927,6 +3135,173 @@
      "stage"
     ],
     "title": "LatestObservation"
+   },
+   "LiveImageryOut": {
+    "properties": {
+     "vis": {
+      "type": "string",
+      "title": "Vis"
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "latest",
+       "composite"
+      ],
+      "title": "Mode"
+     },
+     "tile_url": {
+      "type": "string",
+      "title": "Tile Url",
+      "description": "XYZ template with {z}/{x}/{y}, served by Google"
+     },
+     "map_id": {
+      "type": "string",
+      "title": "Map Id"
+     },
+     "scene_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Scene Date",
+      "description": "Latest Sentinel-2 pass rendered"
+     },
+     "scene_count": {
+      "type": "integer",
+      "minimum": 0.0,
+      "title": "Scene Count",
+      "description": "Passes contributing to the image"
+     },
+     "cloud_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cloud Pct",
+      "description": "Mean tile-level cloud cover of those passes"
+     },
+     "window_from": {
+      "type": "string",
+      "format": "date",
+      "title": "Window From"
+     },
+     "window_to": {
+      "type": "string",
+      "format": "date",
+      "title": "Window To"
+     },
+     "collection": {
+      "type": "string",
+      "title": "Collection"
+     },
+     "attribution": {
+      "type": "string",
+      "title": "Attribution"
+     },
+     "cached": {
+      "type": "boolean",
+      "title": "Cached",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "vis",
+     "mode",
+     "tile_url",
+     "map_id",
+     "scene_date",
+     "scene_count",
+     "window_from",
+     "window_to",
+     "collection",
+     "attribution"
+    ],
+    "title": "LiveImageryOut",
+    "examples": [
+     {
+      "attribution": "Contains modified Copernicus Sentinel data, processed in Google Earth Engine",
+      "cached": false,
+      "cloud_pct": 8.4,
+      "collection": "COPERNICUS/S2_SR_HARMONIZED",
+      "map_id": "projects/jalnetra/maps/abc",
+      "mode": "latest",
+      "scene_count": 2,
+      "scene_date": "2026-09-19",
+      "tile_url": "https://earthengine.googleapis.com/v1/projects/jalnetra/maps/abc/tiles/{z}/{x}/{y}",
+      "vis": "truecolor",
+      "window_from": "2026-08-22",
+      "window_to": "2026-09-21"
+     }
+    ]
+   },
+   "LiveVisOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "rgb",
+       "index"
+      ],
+      "title": "Kind"
+     },
+     "water_only": {
+      "type": "boolean",
+      "title": "Water Only"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     },
+     "palette": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Palette"
+     },
+     "range": {
+      "anyOf": [
+       {
+        "prefixItems": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "number"
+         }
+        ],
+        "type": "array",
+        "maxItems": 2,
+        "minItems": 2
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Range"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "label",
+     "kind",
+     "water_only",
+     "description"
+    ],
+    "title": "LiveVisOut"
    },
    "ObservationItem": {
     "properties": {
@@ -4479,6 +4854,13 @@
      "centroid"
     ],
     "title": "ZoneRef"
+   }
+  },
+  "securitySchemes": {
+   "APIKeyHeader": {
+    "type": "apiKey",
+    "in": "header",
+    "name": "X-API-Key"
    }
   }
  }

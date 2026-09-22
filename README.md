@@ -133,6 +133,9 @@ TiTiler renders the water-mask and indicator chips, and the dashboard shows all
 - No alert has yet been raised from real data on this box: the seasonal
   baselines need a multi-year backfill first (`make backfill`).
 - The `ops` profile (Flower, Prometheus, Grafana) has not been exercised live.
+- The Google Earth Engine source and live layer are unit-tested against stubbed
+  responses only; they have not yet run against a real Earth Engine project
+  (needs a service-account key, see below).
 
 ## Water body registry
 
@@ -158,8 +161,10 @@ docker compose run --rm api python -c "from app.workers.tasks import ingest_wate
 ```
 
 - Sources: **Earth Search** (AWS, no auth, default) with **CDSE** (OAuth2 client
-  credentials) as automatic fallback — `STAC_SOURCE`, `STAC_FALLBACK`. The source
-  that served each scene is recorded on `scenes.source`.
+  credentials) as automatic fallback — `STAC_SOURCE`, `STAC_FALLBACK`. **Google
+  Earth Engine** joins the chain (or becomes the primary with `STAC_SOURCE=gee`)
+  once `GEE_ENABLED=true`; see [Live satellite imagery](#live-satellite-imagery-google-earth-engine).
+  The source that served each scene is recorded on `scenes.source`.
 - **Windowed reads only.** Bands B03 B04 B05 B08 B11 SCL are read through
   `/vsicurl/` for the water body's bounding box (+100 m), snapped to the 20 m grid
   so every band lands on one shared 10 m grid (20 m bands bilinear, SCL nearest).
@@ -176,6 +181,47 @@ docker compose run --rm api python -c "from app.workers.tasks import ingest_wate
 - Beat: `poll_tier1_scenes` every 6 h enqueues new Tier 1 scenes on the
   `ingestion` queue; `ingest_water_body` retries transient failures with
   exponential backoff (max 5, capped at 10 min).
+
+## Live satellite imagery (Google Earth Engine)
+
+```sh
+# 1. Google Cloud project with the "Google Earth Engine API" enabled, registered for
+#    Earth Engine at https://code.earthengine.google.com/register (research use is free)
+# 2. Service account with the "Earth Engine Resource Viewer" role; download its JSON key to
+mkdir -p backend/data/secrets && mv ~/Downloads/<key>.json backend/data/secrets/gee-service-account.json
+# 3. .env
+GEE_ENABLED=true
+GEE_PROJECT=<project id>
+GEE_SERVICE_ACCOUNT_KEY=data/secrets/gee-service-account.json
+docker compose up -d --build api worker-ingestion
+curl "http://localhost:8000/api/v1/imagery/status"          # ok: true once the session works
+curl "http://localhost:8000/api/v1/imagery/live?bbox=73.70,18.38,73.78,18.45&vis=truecolor"
+```
+
+- **Live map layer.** `GET /api/v1/imagery/live?bbox=&vis=&date=&days=&composite=`
+  returns a styled Earth Engine map id (`tile_url` is an XYZ template that Google
+  serves directly) for the newest Sentinel-2 pass over the bbox — or, with
+  `composite=true`, the cloud-masked median of the window. Visualisations:
+  `truecolor`, `falsecolor`, `ndti`, `ndci`, `mndwi`; the two index layers are
+  masked to water (MNDWI > 0) so the ramp never paints land. The dashboard's
+  **Live satellite** block in the layer panel drives it: it follows the selected
+  body's bbox (whole state when none is selected) and the timeline date when one
+  is picked. Map ids are cached in Redis for `GEE_MAP_TTL_S`. Nothing is ingested.
+- **Ingestion source.** `app/services/l03_ingestion/gee.py` implements the same
+  `STACSource` protocol over `COPERNICUS/S2_SR_HARMONIZED`. Scene assets are
+  `gee://<asset>#<band>` hrefs; `read_windowed_bands` routes those to
+  `computePixels`, which returns the bands on the *same* snapped 10 m UTM grid
+  the COG reader builds (20 m bands bilinear, SCL nearest), in ≤ 1024 px blocks
+  under Earth Engine's 48 MB response cap. The harmonized collection has the BOA
+  offset removed on every scene, so `scenes.boa_add_offset = 0`.
+- **Auth.** Earth Engine has no API keys: it takes a Google Cloud service-account
+  JSON key (`GEE_SERVICE_ACCOUNT_KEY` path, or `GEE_SERVICE_ACCOUNT_KEY_JSON`
+  inline); with neither it uses the application-default credentials that
+  `earthengine authenticate` writes on a dev box. `/health` gains a `gee` probe
+  while enabled. The high-volume endpoint is used by default (`GEE_HIGH_VOLUME`),
+  which is what Google asks of automated tile and pixel traffic.
+- Attribution on every live response: *Contains modified Copernicus Sentinel
+  data, processed in Google Earth Engine.*
 
 ## Seasonal baseline + rainfall (L7)
 
