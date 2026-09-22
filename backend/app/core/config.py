@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     )
 
     # --- Satellite ingestion (L3) ---
-    stac_source: Literal["earth-search", "cdse"] = "earth-search"
-    stac_fallback: bool = True  # try the other source when the primary fails
+    stac_source: Literal["earth-search", "cdse", "gee"] = "earth-search"
+    stac_fallback: bool = True  # try the other sources when the primary fails
     earth_search_url: str = "https://earth-search.aws.element84.com/v1"
     cdse_stac_url: str = "https://stac.dataspace.copernicus.eu/v1/"
     cdse_token_url: str = (
@@ -62,6 +62,25 @@ class Settings(BaseSettings):
     stac_max_cloud_pct: float = 60.0  # tile-level threshold for the scene `usable` flag
     ingest_lookback_days: int = 7  # beat poll window for Tier 1 bodies
     ingest_cache_prefix: str = "cache"  # MinIO key prefix for windowed arrays
+
+    # --- Google Earth Engine (L3 source + live imagery) ---
+    # Earth Engine has no API keys: it authenticates a Google Cloud *service account*
+    # (JSON key) that has been registered for Earth Engine access on `gee_project`.
+    # With no key configured it falls back to application-default credentials
+    # (`earthengine authenticate` on a dev box). Off by default so nothing touches
+    # Google until a project is set.
+    gee_enabled: bool = False
+    gee_project: str | None = None  # Google Cloud project id registered for Earth Engine
+    gee_service_account: str | None = None  # client_email; read from the key file when unset
+    gee_service_account_key: Path | None = None  # path to the JSON key (e.g. data/secrets/gee.json)
+    gee_service_account_key_json: str | None = None  # ... or the key's JSON inline (CI secrets)
+    gee_high_volume: bool = True  # use the high-volume endpoint for automated tile/pixel traffic
+    gee_collection: str = "COPERNICUS/S2_SR_HARMONIZED"  # BOA offset already removed
+    gee_block_px: int = 1024  # computePixels block edge; 6 uint16 bands stay under the 48 MB cap
+    gee_timeout_s: float = 120.0
+    gee_map_ttl_s: int = 3600  # Redis TTL for live map ids (Earth Engine expires them after hours)
+    gee_live_max_days: int = 120  # widest lookback a live imagery request may ask for
+    gee_live_max_bbox_deg: float = 8.0  # widest bbox edge (Maharashtra is ~7 x 6 degrees)
 
     # --- Preprocessing + water mask (L4 + L5) ---
     mask_min_valid_pct: float = 40.0  # reject a scene for a body below this cloud-free share
@@ -80,6 +99,7 @@ class Settings(BaseSettings):
     baseline_min_history_days: int = 365  # Tier 2/3
     baseline_history_years: int = 3  # default span of the bulk historical backfill
     baseline_backfill_chunk_days: int = 31  # one ingest task per chunk of the backfill window
+    job_max_span_days: int = 3 * 366  # POST /jobs/ingest refuses a wider window than this
     open_meteo_archive_url: str = "https://archive-api.open-meteo.com/v1/archive"
     open_meteo_forecast_url: str = "https://api.open-meteo.com/v1/forecast"
     open_meteo_timeout_s: float = 30.0
@@ -146,6 +166,10 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
 
     # --- API (L2) ---
+    # Write endpoints require one of these keys in X-API-Key; the value is the
+    # actor label written to audit columns. Empty = open in dev/test, refused in prod.
+    api_keys: dict[str, str] = Field(default_factory=dict)
+    rate_limit_storage_uri: str | None = None  # e.g. redis://... once the API has >1 replica
     api_cache_ttl_s: int = 300  # Redis TTL for series / indicator responses
     api_cache_enabled: bool = True
     rate_limit_default: str = "240/minute"  # slowapi syntax, per client IP
@@ -166,6 +190,8 @@ class Settings(BaseSettings):
     )
 
     # --- Ops and observability (S12) ---
+    task_soft_time_limit_s: int = 20 * 60  # SoftTimeLimitExceeded raised inside the task
+    task_time_limit_s: int = 25 * 60  # ... and the worker child is killed after this
     app_version: str = "0.1.0"
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.05

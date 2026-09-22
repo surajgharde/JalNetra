@@ -13,6 +13,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.pagination import decode_cursor, encode_cursor
+from app.core.auth import ActorDep
+from app.core.config import Settings, get_settings
 from app.core.storage import get_store
 from app.db.models import Alert, Validation
 from app.db.session import get_session
@@ -49,15 +51,18 @@ def _out(v: Validation) -> ValidationOut:
 
 @router.post("/validations", response_model=ValidationOut, status_code=status.HTTP_201_CREATED)
 async def create_validation(
-    body: ValidationIn, session: Annotated[AsyncSession, Depends(get_session)]
+    body: ValidationIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: ActorDep,
 ) -> ValidationOut:
     """Submit a field or lab result against an alert. The verdict is computed
     immediately (matched / not_matched / inconclusive), the alert's status is
     updated, and a field-confirmed normal reading is fed back into the
-    seasonal baseline."""
+    seasonal baseline. Requires ``X-API-Key``; ``submitted_by`` is the key's actor."""
     alert = await session.get(Alert, body.alert_id)
     if alert is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"alert {body.alert_id!r} not found")
+    submitted_by = actor.label(body.submitted_by)
     result = await session.run_sync(
         lambda s: submit_validation(
             s,
@@ -66,7 +71,7 @@ async def create_validation(
             lab_results=body.lab_results.model_dump(exclude_none=True),
             observed_condition=body.observed_condition,
             notes=body.notes,
-            submitted_by=body.submitted_by,
+            submitted_by=submitted_by,
         )
     )
     await session.commit()
@@ -143,13 +148,31 @@ def _put_photo(validation_id: int, data: bytes, content_type: str, filename: str
 
 
 @router.post("/validations/{validation_id}/photo", response_model=ValidationOut)
+async def _read_bounded(file: UploadFile, max_bytes: int) -> bytes:
+    """Read the upload in chunks and stop as soon as it exceeds the limit, so an
+    oversized body is never fully buffered in memory."""
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := await file.read(1024 * 1024):
+        size += len(chunk)
+        if size > max_bytes:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                f"photo larger than {max_bytes // (1024 * 1024)} MB",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def upload_photo(
     validation_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    _actor: ActorDep,
     file: Annotated[UploadFile, File(description="JPEG, PNG or WebP, up to 15 MB")],
 ) -> ValidationOut:
-    """Attach a site photo to a validation (stored in MinIO)."""
-    data = await file.read()
+    """Attach a site photo to a validation (stored in MinIO). Requires ``X-API-Key``."""
+    data = await _read_bounded(file, settings.validation_photo_max_bytes)
     try:
         await run_in_threadpool(
             _put_photo,

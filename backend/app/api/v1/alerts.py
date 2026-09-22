@@ -15,6 +15,7 @@ from shapely.geometry import mapping
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import ActorDep
 from app.core.config import Settings, get_settings
 from app.core.storage import get_store
 from app.db.models import Alert, WaterBody, Zone
@@ -192,11 +193,14 @@ async def update_status(
     alert_id: str,
     body: AlertStatusUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: ActorDep,
 ) -> AlertOut:
     """Field workflow: open -> investigating -> validated | dismissed (any order is allowed;
-    the change is audited with who and why)."""
+    the change is audited with who and why). Requires ``X-API-Key``; the key's actor
+    label is recorded as ``by``."""
     alert, wb, zone = await _load(session, alert_id)
-    await session.run_sync(lambda s: set_status(s, alert, body.status, by=body.by, note=body.note))
+    by = actor.label(body.by)
+    await session.run_sync(lambda s: set_status(s, alert, body.status, by=by, note=body.note))
     await session.commit()
     await session.refresh(alert)
     return alert_out(alert, wb, zone)

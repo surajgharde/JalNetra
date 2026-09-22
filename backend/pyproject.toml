@@ -35,6 +35,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "python-multipart>=0.0.9",
     "prometheus-client>=0.20",
+    "earthengine-api>=1.5",
 ]
 
 [project.optional-dependencies]
@@ -81,7 +82,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*", "reportlab.*", "matplotlib.*", "slowapi.*", "sentry_sdk.*", "prometheus_client.*"]
+module = ["celery.*", "minio.*", "geoalchemy2.*", "kombu.*", "geopandas.*", "shapely.*", "sklearn.*", "mgrs.*", "pyproj.*", "pyogrio.*", "rasterio.*", "affine.*", "pystac_client.*", "scipy.*", "xgboost.*", "shap.*", "reportlab.*", "matplotlib.*", "slowapi.*", "sentry_sdk.*", "prometheus_client.*", "ee.*", "google.*", "googleapiclient.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

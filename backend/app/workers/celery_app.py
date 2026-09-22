@@ -32,6 +32,11 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_acks_late=True,
+    # A hung STAC search or /vsicurl range read must not hold a worker slot forever;
+    # with acks_late the killed task is redelivered, so the limits are generous.
+    task_soft_time_limit=settings.task_soft_time_limit_s,
+    task_time_limit=settings.task_time_limit_s,
+    result_expires=24 * 3600,
     worker_prefetch_multiplier=1,
     task_default_queue="default",
     task_routes={

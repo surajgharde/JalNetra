@@ -254,7 +254,7 @@ def detect_anomalies(self: Task, water_body_id: str, scene_id: str) -> dict[str,
 @celery_app.task(
     bind=True,
     name="app.workers.tasks.score_candidates",
-    queue="processing",
+    queue="scoring",
     autoretry_for=(OSError, ConnectionError, TimeoutError),
     retry_backoff=True,
     retry_backoff_max=300,
@@ -302,7 +302,7 @@ def score_candidates(self: Task, water_body_id: str, scene_id: str) -> dict[str,
 @celery_app.task(
     bind=True,
     name="app.workers.tasks.assemble_alerts",
-    queue="processing",
+    queue="scoring",
     autoretry_for=(OSError, ConnectionError, TimeoutError),
     retry_backoff=True,
     retry_backoff_max=300,
@@ -405,7 +405,7 @@ def dispatch_alert(self: Task, alert_id: str, reason: str = "new") -> dict[str, 
     return payload
 
 
-@celery_app.task(name="app.workers.tasks.process_alerts", queue="processing")
+@celery_app.task(name="app.workers.tasks.process_alerts", queue="scoring")
 def process_alerts(
     water_body_id: str, date_from: str, date_to: str | None = None, briefs: bool = False
 ) -> dict[str, Any]:
@@ -445,7 +445,7 @@ def process_alerts(
     return payload
 
 
-@celery_app.task(name="app.workers.tasks.process_scores", queue="processing")
+@celery_app.task(name="app.workers.tasks.process_scores", queue="scoring")
 def process_scores(
     water_body_id: str, date_from: str, date_to: str | None = None, force: bool = False
 ) -> dict[str, Any]:
@@ -471,7 +471,7 @@ def process_scores(
     return payload
 
 
-@celery_app.task(name="app.workers.tasks.train_priority_model", queue="processing")
+@celery_app.task(name="app.workers.tasks.train_priority_model", queue="scoring")
 def train_priority_model() -> dict[str, Any]:
     """Retrain the priority model on validated outcomes (S11). Exits cleanly with
     a logged reason below ``priority_train_min_validations``; a new model is

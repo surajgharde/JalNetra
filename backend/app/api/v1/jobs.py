@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.api.pagination import decode_cursor, encode_cursor
+from app.core.auth import ActorDep
+from app.core.config import Settings, get_settings
 from app.db.models import Job
 from app.db.session import get_session
 from app.schemas.jobs import IngestJobRequest, JobList, JobOut
@@ -24,14 +26,34 @@ def _view_of(job: Job) -> Callable[[Session], dict[str, Any]]:
 
 @router.post("/jobs/ingest", response_model=JobOut, status_code=status.HTTP_202_ACCEPTED)
 async def create_ingest_job(
-    body: IngestJobRequest, session: Annotated[AsyncSession, Depends(get_session)]
+    body: IngestJobRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    actor: ActorDep,
 ) -> JobOut:
     """Enqueue ingestion for a water body and date range. Each ingested scene
     chains mask -> indicators -> anomalies -> scoring -> alerts on its own;
-    poll ``GET /jobs/{id}`` for the live readout."""
+    poll ``GET /jobs/{id}`` for the live readout. Requires ``X-API-Key``.
+
+    The window is capped at ``job_max_span_days`` and a job that is already
+    queued or running for the same body and window is returned instead of
+    being enqueued twice."""
     from app.workers.tasks import backfill_history, ingest_water_body
 
     date_to = body.date_to or body.date_from
+    if (date_to - body.date_from).days > settings.job_max_span_days:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"window wider than {settings.job_max_span_days} days; split the backfill",
+        )
+    existing = await session.run_sync(
+        lambda s: q.find_active_job(s, body.water_body_id, body.date_from, date_to)
+    )
+    if existing is not None:
+        view = await session.run_sync(lambda s: q.job_view(s, existing))
+        await session.commit()
+        return JobOut.model_validate(view)
+    requested_by = actor.label(body.requested_by)
     try:
         job = await session.run_sync(
             lambda s: q.create_job(
@@ -42,7 +64,7 @@ async def create_ingest_job(
                 water_body_id=body.water_body_id,
                 date_from=body.date_from,
                 date_to=date_to,
-                requested_by=body.requested_by,
+                requested_by=requested_by,
             )
         )
     except LookupError as exc:

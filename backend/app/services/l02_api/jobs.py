@@ -76,6 +76,24 @@ def create_job(
     return job
 
 
+def find_active_job(
+    session: Session, water_body_id: str, date_from: date, date_to: date
+) -> Job | None:
+    """A queued or running job for the same body and window, if one exists, so a
+    double-click on "Run pipeline" does not fan out the same work twice."""
+    return session.scalars(
+        select(Job)
+        .where(
+            Job.water_body_id == water_body_id,
+            Job.date_from == date_from,
+            Job.date_to == date_to,
+            Job.status.in_(("queued", "running")),
+        )
+        .order_by(Job.created_at.desc())
+        .limit(1)
+    ).first()
+
+
 def _window(job: Job) -> tuple[datetime, datetime]:
     start = datetime(job.date_from.year, job.date_from.month, job.date_from.day, tzinfo=UTC)
     end = datetime(job.date_to.year, job.date_to.month, job.date_to.day, tzinfo=UTC) + timedelta(
