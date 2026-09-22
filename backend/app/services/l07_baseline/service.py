@@ -21,7 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import numpy as np
-from sqlalchemy import Integer, case, delete, func, select, text
+from sqlalchemy import Connection, Integer, case, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -458,11 +458,18 @@ def refresh_weekly(
     a bulk backfill; the hourly policy covers the live window on its own.
     """
     session.commit()
-    conn = session.connection().execution_options(isolation_level="AUTOCOMMIT")
-    conn.execute(
-        text("CALL refresh_continuous_aggregate('indicator_weekly', :start, :end)"),
-        {"start": start, "end": end},
-    )
+    # A fresh connection: the session's own would auto-begin a transaction first,
+    # and the isolation level cannot be changed once one is open.
+    bind = session.get_bind()
+    engine = bind.engine if isinstance(bind, Connection) else bind
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(
+            text(
+                "CALL refresh_continuous_aggregate('indicator_weekly', "
+                "CAST(:start AS timestamptz), CAST(:end AS timestamptz))"
+            ),
+            {"start": start, "end": end},
+        )
 
 
 def weekly_series(

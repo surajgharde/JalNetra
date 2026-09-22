@@ -130,8 +130,12 @@ TiTiler renders the water-mask and indicator chips, and the dashboard shows all
   chips are keyed by body + date, so the second scene's chip overwrites the
   first and L6 fails with a shape mismatch for that date (seen on Nira
   Deoghar, tiles 43QCA/43QCV). Needs per-tile mosaicking.
-- No alert has yet been raised from real data on this box: the seasonal
-  baselines need a multi-year backfill first (`make backfill`).
+- Baselines and alerts are proven on one body only: a 2.5-year Khadakwasla
+  backfill (Apr 2024 - Sep 2026, 167 scenes via Earth Engine) built 5,275 usable
+  day-of-year windows and yielded 75 alerts (6 high) with briefs, e.g.
+  `alr_2024_1224_khadakwasla_z3` (sediment 17 sigma above baseline, three
+  detectors agreeing, no rain). The other 29 bodies still show "baseline
+  building" until `make backfill` runs for them.
 - The `ops` profile (Flower, Prometheus, Grafana) has not been exercised live.
 - Google Earth Engine was verified live on 2026-09-22 (project registered, user
   sign-in): a `computePixels` read is pixel-identical to the Earth Search COG
@@ -361,6 +365,16 @@ curl -X PATCH localhost:8000/api/v1/alerts/<id>/status -H 'content-type: applica
   e-mail on creation and on escalation only. `DISPATCH_ENABLED=false` by
   default: a dev box logs `skipped` rows and never pages a regional office.
 - Worker queue `reporting` carries briefs and dispatches.
+
+## Methodology (explainability of the method itself)
+
+`GET /api/v1/methodology` and the dashboard's **Methodology** tab describe the
+whole chain — data, water-body detection, every indicator with its formula and
+scientific basis, temporal baselines, the three detectors and the rainfall gate,
+the priority weights, alert contents, explanation contract, validation loop and
+known limitations. The text is generated from the code that does the work
+(`l06_indicators/registry.py`, `l09_fusion/models.py`, settings), so it cannot
+drift from the implementation.
 
 ## Pipeline-run report (export)
 
