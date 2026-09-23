@@ -34,7 +34,10 @@ export function TimelineScrubber() {
     const el = activeRef.current;
     const strip = stripRef.current;
     if (!el || !strip) return;
-    const left = el.offsetLeft - strip.clientWidth / 2 + el.offsetWidth / 2;
+    // Rect maths, not offsetLeft: the strip is not the element's offsetParent.
+    const er = el.getBoundingClientRect();
+    const sr = strip.getBoundingClientRect();
+    const left = strip.scrollLeft + (er.left - sr.left) - sr.width / 2 + er.width / 2;
     strip.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
   }, [date, items.length]);
 

@@ -1,30 +1,15 @@
 import { useEffect } from "react";
-import { Activity, BookOpen, Droplets, ListOrdered } from "lucide-react";
-import { NavLink, Route, Routes, useSearchParams } from "react-router-dom";
-import { useHealth } from "@/api/hooks";
+import { Route, Routes, useSearchParams } from "react-router-dom";
+import { AppSidebar } from "@/components/AppSidebar";
 import { AlertQueue } from "@/features/alerts/AlertQueue";
 import { AlertSheet } from "@/features/alerts/AlertSheet";
 import { IndicatorPanel } from "@/features/dashboard/IndicatorPanel";
 import { MapView } from "@/features/dashboard/MapView";
 import { SeriesChart } from "@/features/dashboard/SeriesChart";
 import { TimelineScrubber } from "@/features/dashboard/TimelineScrubber";
-import { WaterBodyList } from "@/features/dashboard/WaterBodyList";
-import { PipelineRunner } from "@/features/jobs/PipelineRunner";
+import { WaterBodyBar } from "@/features/dashboard/WaterBodyBar";
 import { MethodologyPage } from "@/features/methodology/MethodologyPage";
-import { cn } from "@/lib/utils";
 import { useUi } from "@/store/ui";
-
-function HealthDot() {
-  const { data, isError } = useHealth();
-  const ok = data?.status === "ok";
-  const label = isError ? "API unreachable" : data ? `API ${data.status}` : "checking…";
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title={label}>
-      <span className={cn("h-2 w-2 rounded-full", isError ? "bg-red-500" : ok ? "bg-emerald-500" : "bg-amber-500")} />
-      {label}
-    </span>
-  );
-}
 
 /** Keep `?wb=` and `?alert=` in the URL so a demo state is a shareable link. */
 function UrlSync() {
@@ -56,10 +41,7 @@ function UrlSync() {
 
 function Dashboard() {
   return (
-    <div className="grid h-full min-h-0 grid-cols-[17rem_minmax(0,1fr)_23rem]">
-      <aside className="min-h-0 min-w-0 border-r bg-card">
-        <WaterBodyList />
-      </aside>
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_23rem]">
       <section className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto_clamp(8rem,22vh,14rem)]">
         <div className="min-h-0 min-w-0">
           <MapView />
@@ -78,46 +60,20 @@ function Dashboard() {
   );
 }
 
-const navClass = ({ isActive }: { isActive: boolean }) =>
-  cn(
-    "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm",
-    isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
-  );
-
 export default function App() {
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center gap-4 border-b bg-card px-4 py-2">
-        <div className="flex items-center gap-2">
-          <Droplets className="h-5 w-5 text-primary" />
-          <span className="text-base font-semibold">JalNetra</span>
-          <span className="hidden text-xs text-muted-foreground md:inline">
-            satellite water-quality anomaly intelligence · Maharashtra
-          </span>
-        </div>
-        <nav className="flex items-center gap-1">
-          <NavLink to="/" end className={navClass}>
-            <Activity className="h-4 w-4" /> Dashboard
-          </NavLink>
-          <NavLink to="/alerts" className={navClass}>
-            <ListOrdered className="h-4 w-4" /> Priority queue
-          </NavLink>
-          <NavLink to="/methodology" className={navClass}>
-            <BookOpen className="h-4 w-4" /> Methodology
-          </NavLink>
-        </nav>
-        <div className="ml-auto flex items-center gap-4">
-          <PipelineRunner />
-          <HealthDot />
-        </div>
-      </header>
-      <main className="min-h-0 flex-1">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/alerts" element={<AlertQueue />} />
-          <Route path="/methodology" element={<MethodologyPage />} />
-        </Routes>
-      </main>
+    <div className="flex h-full">
+      <AppSidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <WaterBodyBar />
+        <main className="min-h-0 flex-1">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/alerts" element={<AlertQueue />} />
+            <Route path="/methodology" element={<MethodologyPage />} />
+          </Routes>
+        </main>
+      </div>
       <UrlSync />
       <AlertSheet />
     </div>
