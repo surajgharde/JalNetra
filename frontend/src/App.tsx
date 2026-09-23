@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { Route, Routes, useSearchParams } from "react-router-dom";
+import { Route, Routes, useLocation, useSearchParams } from "react-router-dom";
+import { useObservations } from "@/api/hooks";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AlertQueue } from "@/features/alerts/AlertQueue";
 import { AlertSheet } from "@/features/alerts/AlertSheet";
-import { IndicatorPanel } from "@/features/dashboard/IndicatorPanel";
-import { MapView } from "@/features/dashboard/MapView";
-import { SeriesChart } from "@/features/dashboard/SeriesChart";
-import { TimelineScrubber } from "@/features/dashboard/TimelineScrubber";
+import { IndicatorsPage } from "@/features/dashboard/IndicatorsPage";
+import { Overview } from "@/features/dashboard/Overview";
+import { TrendsPage } from "@/features/dashboard/TrendsPage";
 import { WaterBodyBar } from "@/features/dashboard/WaterBodyBar";
 import { MethodologyPage } from "@/features/methodology/MethodologyPage";
 import { useUi } from "@/store/ui";
@@ -14,6 +14,7 @@ import { useUi } from "@/store/ui";
 /** Keep `?wb=` and `?alert=` in the URL so a demo state is a shareable link. */
 function UrlSync() {
   const [params, setParams] = useSearchParams();
+  const { pathname } = useLocation();
   const waterBodyId = useUi((s) => s.waterBodyId);
   const alertId = useUi((s) => s.alertId);
   const selectWaterBody = useUi((s) => s.selectWaterBody);
@@ -35,29 +36,28 @@ function UrlSync() {
     else next.delete("alert");
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waterBodyId, alertId]);
+  }, [waterBodyId, alertId, pathname]);
   return null;
 }
 
-function Dashboard() {
-  return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_23rem]">
-      <section className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto_clamp(8rem,22vh,14rem)]">
-        <div className="min-h-0 min-w-0">
-          <MapView />
-        </div>
-        <div className="min-w-0 border-t bg-card">
-          <TimelineScrubber />
-        </div>
-        <div className="min-h-0 min-w-0 border-t bg-card">
-          <SeriesChart />
-        </div>
-      </section>
-      <aside className="min-h-0 min-w-0 border-l bg-card">
-        <IndicatorPanel />
-      </aside>
-    </div>
-  );
+/**
+ * The selected scene drives the map rasters and the indicator tables, so it is
+ * defaulted here rather than inside the timeline — which now lives on its own
+ * screen and may never be opened.
+ */
+function DateSync() {
+  const waterBodyId = useUi((s) => s.waterBodyId);
+  const date = useUi((s) => s.date);
+  const selectDate = useUi((s) => s.selectDate);
+  const { data } = useObservations(waterBodyId);
+
+  useEffect(() => {
+    if (date || !data) return;
+    const usable = data.items.filter((o) => o.usable);
+    // The API returns newest first; the freshest usable scene is the default.
+    if (usable.length) selectDate(usable[0].observed_on);
+  }, [date, data, selectDate]);
+  return null;
 }
 
 export default function App() {
@@ -68,13 +68,16 @@ export default function App() {
         <WaterBodyBar />
         <main className="min-h-0 flex-1">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<Overview />} />
+            <Route path="/indicators" element={<IndicatorsPage />} />
+            <Route path="/trends" element={<TrendsPage />} />
             <Route path="/alerts" element={<AlertQueue />} />
             <Route path="/methodology" element={<MethodologyPage />} />
           </Routes>
         </main>
       </div>
       <UrlSync />
+      <DateSync />
       <AlertSheet />
     </div>
   );

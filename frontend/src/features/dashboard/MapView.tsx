@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
+import { Layers, X } from "lucide-react";
 import { GeoJSON, MapContainer, TileLayer, useMap } from "react-leaflet";
 import type { Feature as GJFeature, FeatureCollection as GJFeatureCollection, Geometry as GJGeometry } from "geojson";
 import { useAlertsGeo, useWaterBody } from "@/api/hooks";
@@ -57,6 +58,7 @@ export function MapView() {
   const openAlert = useUi((s) => s.openAlert);
   const body = useWaterBody(waterBodyId);
   const alerts = useAlertsGeo({ status: "active" });
+  const [layersOpen, setLayersOpen] = useState(false);
 
   const boundary = useMemo<GJFeature<GJGeometry> | null>(
     () =>
@@ -128,8 +130,18 @@ export function MapView() {
           />
         )}
       </MapContainer>
-      <div className="absolute right-3 top-3 z-[1000]">
-        <LayerToggles disabled={!waterBodyId || !date} />
+      {/* Layers stay behind a button: the map is the point, not the controls. */}
+      <div className="absolute right-3 top-3 z-[1000] flex flex-col items-end gap-2">
+        <button
+          onClick={() => setLayersOpen((v) => !v)}
+          className="flex items-center gap-1.5 rounded-md border bg-card/95 px-2.5 py-1.5 text-xs font-medium shadow hover:bg-accent"
+          title={layersOpen ? "Hide layer controls" : "Show layer controls"}
+          aria-expanded={layersOpen}
+        >
+          {layersOpen ? <X className="h-3.5 w-3.5" /> : <Layers className="h-3.5 w-3.5" />}
+          Layers
+        </button>
+        {layersOpen && <LayerToggles disabled={!waterBodyId || !date} />}
       </div>
       {alerts.data && (
         <div className="absolute bottom-3 left-3 z-[1000] max-w-md">

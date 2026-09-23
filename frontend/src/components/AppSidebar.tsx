@@ -1,4 +1,4 @@
-import { Activity, BookOpen, Droplets, ListOrdered } from "lucide-react";
+import { BookOpen, Droplets, LayoutDashboard, LineChart, ListOrdered, Table2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useHealth, useWaterBodies } from "@/api/hooks";
 import { cn } from "@/lib/utils";
@@ -17,15 +17,17 @@ function HealthDot() {
 }
 
 const NAV = [
-  { to: "/", end: true, icon: Activity, label: "Dashboard" },
+  { to: "/", end: true, icon: LayoutDashboard, label: "Overview" },
+  { to: "/indicators", end: false, icon: Table2, label: "Indicators" },
+  { to: "/trends", end: false, icon: LineChart, label: "Trends" },
   { to: "/alerts", end: false, icon: ListOrdered, label: "Priority queue" },
   { to: "/methodology", end: false, icon: BookOpen, label: "Methodology" },
 ] as const;
 
 /**
- * The app rail: brand, the three sections, and API health. Water-body
+ * The app rail: brand, the five sections, and API health. Water-body
  * selection is deliberately not here — it is the context bar across the top,
- * because it scopes the dashboard rather than navigating between sections.
+ * because it scopes every screen rather than navigating between them.
  */
 export function AppSidebar() {
   const bodies = useWaterBodies();

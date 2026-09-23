@@ -1,4 +1,3 @@
-import { Layers } from "lucide-react";
 import { RASTER_LAYERS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/store/ui";
@@ -13,10 +12,7 @@ export function LayerToggles({ disabled }: { disabled: boolean }) {
   const setShowZones = useUi((s) => s.setShowZones);
 
   return (
-    <div className="w-52 rounded-md border bg-card/95 p-2 text-xs shadow">
-      <div className="mb-1 flex items-center gap-1 font-semibold">
-        <Layers className="h-3.5 w-3.5" /> Layers
-      </div>
+    <div className="max-h-[60vh] w-52 overflow-y-auto rounded-md border bg-card/95 p-2 text-xs shadow">
       <label className="flex items-center gap-2 py-0.5">
         <input type="checkbox" checked={showAlerts} onChange={(e) => setShowAlerts(e.target.checked)} />
         Open alerts

@@ -16,6 +16,38 @@ import { EmptyState, ErrorState, PanelSkeleton } from "@/components/States";
 import { fmtDate, fmtNum, indicatorLabel, indicatorShortLabel, QUALITY_INDICATORS } from "@/lib/format";
 import { useUi } from "@/store/ui";
 
+/** One source of truth for the marks, so the legend can never drift from them. */
+const MARK = {
+  value: "#0f172a",
+  median: "#3182bd",
+  band: "#9ecae1",
+  flagged: "#dc2626",
+};
+
+/** Identity is never colour alone: every mark is named here. */
+function Legend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-3 py-1 text-[11px] text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <span className="h-0.5 w-4 rounded-full" style={{ background: MARK.value }} />
+        Observed
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-0.5 w-4 rounded-full" style={{ background: MARK.median }} />
+        Seasonal median
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-2.5 w-4 rounded-sm" style={{ background: MARK.band, opacity: 0.45 }} />
+        Seasonal p10–p90
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: MARK.flagged }} />
+        Flagged |z| &gt; 3
+      </span>
+    </div>
+  );
+}
+
 type Row = {
   t: number;
   date: string;
@@ -85,6 +117,7 @@ export function SeriesChart() {
           )}
         </div>
       </div>
+      <Legend />
       <div className="min-h-0 flex-1 p-2">
         {isLoading && <PanelSkeleton rows={3} />}
         {error && <ErrorState error={error} onRetry={() => void refetch()} />}
@@ -112,11 +145,11 @@ export function SeriesChart() {
                   return [String(v), String(name)];
                 }}
               />
-              <Area dataKey="band" stroke="none" fill="#9ecae1" fillOpacity={0.45} isAnimationActive={false} connectNulls />
-              <Line dataKey="median" stroke="#3182bd" dot={false} strokeWidth={1} isAnimationActive={false} connectNulls />
+              <Area dataKey="band" stroke="none" fill={MARK.band} fillOpacity={0.45} isAnimationActive={false} connectNulls />
+              <Line dataKey="median" stroke={MARK.median} dot={false} strokeWidth={1} isAnimationActive={false} connectNulls />
               <Line
                 dataKey="value"
-                stroke="#0f172a"
+                stroke={MARK.value}
                 strokeWidth={1.2}
                 dot={{ r: 2 }}
                 isAnimationActive={false}
@@ -129,7 +162,7 @@ export function SeriesChart() {
                   },
                 }}
               />
-              <Scatter dataKey="flagged" fill="#dc2626" isAnimationActive={false} />
+              <Scatter dataKey="flagged" fill={MARK.flagged} isAnimationActive={false} />
               {date && (
                 <ReferenceLine x={parseISO(date).getTime()} stroke="#0369a1" strokeDasharray="3 3" />
               )}

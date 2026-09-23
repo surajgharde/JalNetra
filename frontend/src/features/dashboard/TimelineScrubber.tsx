@@ -24,11 +24,6 @@ export function TimelineScrubber() {
   const usable = useMemo(() => items.filter((o) => o.usable), [items]);
   const idx = usable.findIndex((o) => o.observed_on === date);
 
-  // Default to the newest usable scene as soon as observations arrive.
-  useEffect(() => {
-    if (!date && usable.length) selectDate(usable[usable.length - 1].observed_on);
-  }, [date, usable, selectDate]);
-
   // The strip scrolls once a body has years of scenes; keep the selection visible.
   useEffect(() => {
     const el = activeRef.current;
