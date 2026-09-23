@@ -56,22 +56,22 @@ function UrlSync() {
 
 function Dashboard() {
   return (
-    <div className="grid h-full min-h-0 grid-cols-[18rem_1fr_24rem]">
-      <aside className="min-h-0 border-r bg-card">
+    <div className="grid h-full min-h-0 grid-cols-[17rem_minmax(0,1fr)_23rem]">
+      <aside className="min-h-0 min-w-0 border-r bg-card">
         <WaterBodyList />
       </aside>
-      <section className="grid min-h-0 grid-rows-[1fr_auto_15rem]">
-        <div className="min-h-0">
+      <section className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto_clamp(8rem,22vh,14rem)]">
+        <div className="min-h-0 min-w-0">
           <MapView />
         </div>
-        <div className="border-t bg-card">
+        <div className="min-w-0 border-t bg-card">
           <TimelineScrubber />
         </div>
-        <div className="min-h-0 border-t bg-card">
+        <div className="min-h-0 min-w-0 border-t bg-card">
           <SeriesChart />
         </div>
       </section>
-      <aside className="min-h-0 border-l bg-card">
+      <aside className="min-h-0 min-w-0 border-l bg-card">
         <IndicatorPanel />
       </aside>
     </div>

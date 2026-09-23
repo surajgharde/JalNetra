@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useSeries, useWaterBody } from "@/api/hooks";
 import { EmptyState, ErrorState, PanelSkeleton } from "@/components/States";
-import { fmtDate, fmtNum, indicatorLabel, QUALITY_INDICATORS } from "@/lib/format";
+import { fmtDate, fmtNum, indicatorLabel, indicatorShortLabel, QUALITY_INDICATORS } from "@/lib/format";
 import { useUi } from "@/store/ui";
 
 type Row = {
@@ -63,19 +63,20 @@ export function SeriesChart() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between gap-3 border-b px-3 py-1.5 text-xs">
+        <div className="flex shrink-0 items-center gap-1">
           {QUALITY_INDICATORS.map((k) => (
             <button
               key={k}
               onClick={() => selectIndicator(k)}
-              className={`rounded px-2 py-0.5 ${indicator === k ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+              title={indicatorLabel(k)}
+              className={`shrink-0 whitespace-nowrap rounded px-2 py-0.5 ${indicator === k ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
             >
-              {indicatorLabel(k)}
+              {indicatorShortLabel(k)}
             </button>
           ))}
         </div>
-        <div className="text-muted-foreground">
+        <div className="min-w-0 truncate text-right text-muted-foreground">
           {data && (
             <>
               {data.zone_id} · baseline {data.baseline_status}

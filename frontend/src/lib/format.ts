@@ -32,6 +32,8 @@ export const QUALITY_INDICATORS = [
   "sediment_proxy",
 ] as const;
 export const indicatorLabel = (key: string) => INDICATOR_LABELS[key] ?? key;
+/** Same label without the index in brackets, for tabs and other tight rows. */
+export const indicatorShortLabel = (key: string) => indicatorLabel(key).replace(/\s*\(.*\)$/, "");
 
 export const RASTER_LAYERS: { key: RasterLayer; label: string; swatch: string }[] = [
   { key: "ndti_turbidity", label: "Turbidity", swatch: "linear-gradient(90deg,#fff7bc,#fe9929,#993404)" },

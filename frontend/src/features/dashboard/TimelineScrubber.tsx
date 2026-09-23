@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight, Cloud, CloudOff } from "lucide-react";
 import { useObservations } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ export function TimelineScrubber() {
   const date = useUi((s) => s.date);
   const selectDate = useUi((s) => s.selectDate);
   const { data, isLoading, error, refetch } = useObservations(waterBodyId);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLButtonElement>(null);
 
   // Oldest -> newest for the scrubber.
   const items = useMemo(() => [...(data?.items ?? [])].reverse(), [data]);
@@ -27,6 +29,15 @@ export function TimelineScrubber() {
     if (!date && usable.length) selectDate(usable[usable.length - 1].observed_on);
   }, [date, usable, selectDate]);
 
+  // The strip scrolls once a body has years of scenes; keep the selection visible.
+  useEffect(() => {
+    const el = activeRef.current;
+    const strip = stripRef.current;
+    if (!el || !strip) return;
+    const left = el.offsetLeft - strip.clientWidth / 2 + el.offsetWidth / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [date, items.length]);
+
   if (!waterBodyId) return null;
   if (isLoading) return <PanelSkeleton rows={2} />;
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
@@ -34,7 +45,7 @@ export function TimelineScrubber() {
     return <EmptyState title="No observations yet" hint="Run the pipeline for this water body." />;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2">
+    <div className="flex min-w-0 items-center gap-2 px-3 py-2">
       <Button
         size="icon"
         variant="outline"
@@ -44,12 +55,13 @@ export function TimelineScrubber() {
       >
         <ChevronLeft className="h-4 w-4" />
       </Button>
-      <div className="flex flex-1 items-end gap-[3px] overflow-x-auto py-1">
+      <div ref={stripRef} className="flex min-w-0 flex-1 items-end gap-[3px] overflow-x-auto py-1">
         {items.map((o) => {
           const active = o.observed_on === date;
           return (
             <button
               key={o.scene_id}
+              ref={active ? activeRef : undefined}
               title={`${fmtDate(o.observed_on)} · cloud ${o.cloud_pct.toFixed(0)}% · ${o.usable ? `${(o.valid_pixel_pct ?? 0).toFixed(0)}% clear` : "unusable"} · ${o.stage}`}
               disabled={!o.usable}
               onClick={() => selectDate(o.observed_on)}
@@ -72,7 +84,7 @@ export function TimelineScrubber() {
       >
         <ChevronRight className="h-4 w-4" />
       </Button>
-      <div className="w-44 shrink-0 text-right text-xs">
+      <div className="w-36 shrink-0 text-right text-xs">
         {idx >= 0 ? (
           <>
             <div className="font-medium">{fmtDate(usable[idx].observed_on)}</div>
