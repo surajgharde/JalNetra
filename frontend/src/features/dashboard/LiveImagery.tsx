@@ -101,9 +101,10 @@ export function LiveImageryControls() {
               {v.label}
             </label>
           ))}
-          <div className="flex items-center gap-2 pt-1">
+          {/* Stacked: side by side, the lookback select is clipped by the panel. */}
+          <div className="flex flex-col gap-1 pt-1">
             <select
-              className="h-6 rounded border bg-background px-1 text-[11px]"
+              className="h-6 w-full min-w-0 rounded border bg-background px-1 text-[11px]"
               value={live.composite ? "composite" : "latest"}
               onChange={(e) => setLive({ composite: e.target.value === "composite" })}
               aria-label="Live imagery mode"
@@ -112,14 +113,14 @@ export function LiveImageryControls() {
               <option value="composite">Cloud-free composite</option>
             </select>
             <select
-              className="h-6 rounded border bg-background px-1 text-[11px]"
+              className="h-6 w-full min-w-0 rounded border bg-background px-1 text-[11px]"
               value={live.days}
               onChange={(e) => setLive({ days: Number(e.target.value) })}
               aria-label="Lookback window"
             >
               {[15, 30, 60, 90].map((d) => (
                 <option key={d} value={d}>
-                  {d} days
+                  Last {d} days
                 </option>
               ))}
             </select>

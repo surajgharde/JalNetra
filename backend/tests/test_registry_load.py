@@ -12,7 +12,7 @@ from app.services.registry.geo import area_km2
 from app.services.registry.load import assign_tier, build_records, upsert_records
 from app.services.registry.mgrs import ComputedGridResolver
 from app.services.registry.overpass import build_query, to_feature_collection
-from app.services.registry.seed import SEED_FILE
+from app.services.registry.seed import NAGPUR_SEED_FILE, PUNE_SEED_FILE
 from app.services.registry.zones import generate_zones
 
 # --- tiering ------------------------------------------------------------------
@@ -74,21 +74,41 @@ def test_build_records_reprojects_to_wgs84() -> None:
 
 @pytest.fixture(scope="module")
 def seed_fc() -> dict:  # type: ignore[type-arg]
-    return json.loads(Path(SEED_FILE).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    return json.loads(Path(PUNE_SEED_FILE).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
 
 
-def test_seed_has_at_least_25_valid_pune_bodies(seed_fc: dict) -> None:  # type: ignore[type-arg]
-    feats = seed_fc["features"]
-    assert len(feats) >= 25
+@pytest.fixture(scope="module")
+def nagpur_fc() -> dict:  # type: ignore[type-arg]
+    return json.loads(Path(NAGPUR_SEED_FILE).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+
+# (file, district, minimum bodies, lon range, lat range) — one row per seeded district.
+DISTRICT_SEEDS = [
+    (PUNE_SEED_FILE, "Pune", 25, (73.3, 75.3), (17.9, 19.5)),
+    (NAGPUR_SEED_FILE, "Nagpur", 12, (78.2, 79.7), (20.5, 21.8)),
+]
+
+
+@pytest.mark.parametrize("path,district,minimum,lon_range,lat_range", DISTRICT_SEEDS)
+def test_district_seed_is_valid(
+    path: Path,
+    district: str,
+    minimum: int,
+    lon_range: tuple[float, float],
+    lat_range: tuple[float, float],
+) -> None:
+    feats = json.loads(Path(path).read_text(encoding="utf-8"))["features"]
+    assert len(feats) >= minimum
     ids = [f["properties"]["id"] for f in feats]
     assert len(set(ids)) == len(ids)
     for f in feats:
         g = shape(f["geometry"])
         assert g.is_valid and not g.is_empty, f["properties"]["id"]
-        assert f["properties"]["district"] == "Pune"
+        assert f["properties"]["district"] == district
         assert f["properties"]["tier"] in (1, 2, 3)
         lon, lat = g.centroid.x, g.centroid.y
-        assert 73.3 < lon < 75.3 and 17.9 < lat < 19.5, f["properties"]["id"]
+        assert lon_range[0] < lon < lon_range[1], f["properties"]["id"]
+        assert lat_range[0] < lat < lat_range[1], f["properties"]["id"]
 
 
 def test_seed_contains_named_bodies(seed_fc: dict) -> None:  # type: ignore[type-arg]
@@ -110,7 +130,27 @@ def test_khadakwasla_is_where_the_plan_says(seed_fc: dict) -> None:  # type: ign
     assert 5 < area_km2(g) < 20
 
 
-def test_every_seed_body_resolves_to_a_tile(seed_fc: dict) -> None:  # type: ignore[type-arg]
+def test_nagpur_seed_contains_named_bodies(nagpur_fc: dict) -> None:  # type: ignore[type-arg]
+    ids = {f["properties"]["id"] for f in nagpur_fc["features"]}
+    # Pench/Totladoh (mapped as Rajiv Sagar), Khindsi, and the city lakes.
+    assert {
+        "wb_rajiv_sagar_dam",
+        "wb_ramsagar_lake_khindshi",
+        "wb_gorewada_lake",
+        "wb_ambazari_lake",
+        "wb_futala_lake",
+    } <= ids
+
+
+@pytest.mark.parametrize("path,district,minimum,lon_range,lat_range", DISTRICT_SEEDS)
+def test_every_seed_body_resolves_to_a_tile(
+    path: Path,
+    district: str,
+    minimum: int,
+    lon_range: tuple[float, float],
+    lat_range: tuple[float, float],
+) -> None:
+    seed_fc = json.loads(Path(path).read_text(encoding="utf-8"))
     r = ComputedGridResolver()
     for f in seed_fc["features"]:
         tiles = r.tiles_for(shape(f["geometry"]))
