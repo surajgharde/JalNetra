@@ -248,9 +248,11 @@ def test_chain_raises_when_all_fail() -> None:
 
 
 def test_build_source_respects_config() -> None:
-    s = Settings(_env_file=None, stac_source="earth-search", stac_fallback=True)
+    # _env_file=None blocks the .env file but not the process environment, so
+    # pin the GEE flag or a GEE-configured box appends a third source here.
+    s = Settings(_env_file=None, gee_enabled=False, stac_source="earth-search", stac_fallback=True)
     chain = build_source(s)
     assert isinstance(chain, ChainedSource)
     assert [x.name for x in chain.sources] == ["earth-search", "cdse"]
-    s2 = Settings(_env_file=None, stac_source="cdse", stac_fallback=False)
+    s2 = Settings(_env_file=None, gee_enabled=False, stac_source="cdse", stac_fallback=False)
     assert isinstance(build_source(s2), CDSESource)

@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { Table2 } from "lucide-react";
 import { useWaterBody } from "@/api/hooks";
+import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState } from "@/components/States";
+import { EmptyState, NotFoundState } from "@/components/States";
 import { useUi } from "@/store/ui";
 import { SeriesChart } from "./SeriesChart";
 import { TimelineScrubber } from "./TimelineScrubber";
@@ -17,6 +18,8 @@ export function TrendsPage() {
 
   if (!waterBodyId)
     return <EmptyState title="Select a water body" hint="Pick one from the bar above to see its history." />;
+  if (body.error instanceof ApiError && body.error.status === 404)
+    return <NotFoundState id={waterBodyId} />;
 
   return (
     <div className="flex h-full flex-col">

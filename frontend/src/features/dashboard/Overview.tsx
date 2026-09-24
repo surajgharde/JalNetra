@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useIndicators, useObservations, useWaterBody } from "@/api/hooks";
-import { EmptyState } from "@/components/States";
+import { ApiError } from "@/api/http";
+import { EmptyState, NotFoundState } from "@/components/States";
 import { StatTile, type Tone } from "@/components/StatTile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtDate, fmtKm2, fmtSigned, indicatorShortLabel, statusLabel } from "@/lib/format";
@@ -46,6 +47,8 @@ export function Overview() {
         hint="Pick one from the bar above to see its current state."
       />
     );
+  if (body.error instanceof ApiError && body.error.status === 404)
+    return <NotFoundState id={waterBodyId} />;
 
   const wb = body.data;
   const loading = body.isLoading || indicators.isLoading;

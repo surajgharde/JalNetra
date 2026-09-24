@@ -30,14 +30,28 @@ function FitToBody({ bbox }: { bbox: number[] | undefined }) {
 }
 
 /** Raster chip layers for the selected body + date, one L.tileLayer per visible layer. */
-function RasterLayers({ waterBodyId, date }: { waterBodyId: string; date: string }) {
+function RasterLayers({
+  waterBodyId,
+  date,
+  bbox,
+}: {
+  waterBodyId: string;
+  date: string;
+  bbox: number[] | undefined;
+}) {
   const layers = useUi((s) => s.layers);
+  // Chips only cover the body's bbox; without this Leaflet asks for the whole
+  // viewport grid and every tile off the chip comes back 404.
+  const bounds = bbox
+    ? new L.LatLngBounds([bbox[1], bbox[0]], [bbox[3], bbox[2]])
+    : undefined;
   return (
     <>
       {RASTER_LAYERS.filter((l) => layers[l.key]).map((l) => (
         <TileLayer
           key={`${l.key}-${date}`}
           url={api.tiles.template(l.key, waterBodyId, date)}
+          bounds={bounds}
           opacity={l.key === "watermask" ? 0.5 : 0.85}
           maxNativeZoom={16}
           maxZoom={19}
@@ -102,7 +116,9 @@ export function MapView() {
             }}
           />
         )}
-        {waterBodyId && date && <RasterLayers waterBodyId={waterBodyId} date={date} />}
+        {waterBodyId && date && (
+          <RasterLayers waterBodyId={waterBodyId} date={date} bbox={body.data?.bbox} />
+        )}
         {showAlerts && alerts.data && (
           <GeoJSON
             key={`a-${alerts.data.features.length}`}

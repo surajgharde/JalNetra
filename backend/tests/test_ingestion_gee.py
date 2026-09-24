@@ -130,7 +130,7 @@ def test_initialize_refuses_when_disabled() -> None:
 
 
 def test_build_source_chains_gee_only_when_enabled() -> None:
-    plain = build_source(Settings(app_env="test"))
+    plain = build_source(Settings(app_env="test", gee_enabled=False))
     assert isinstance(plain, ChainedSource)
     assert [s.name for s in plain.sources] == ["earth-search", "cdse"]
 
@@ -145,7 +145,7 @@ def test_build_source_chains_gee_only_when_enabled() -> None:
     assert [s.name for s in primary.sources] == ["gee", "earth-search", "cdse"]
 
     with pytest.raises(ValueError):
-        build_source(Settings(app_env="test", stac_source="gee"))
+        build_source(Settings(app_env="test", gee_enabled=False, stac_source="gee"))
 
 
 def test_parse_bbox_validation() -> None:
@@ -155,7 +155,12 @@ def test_parse_bbox_validation() -> None:
             imagery_api.parse_bbox(bad, 8.0)
 
 
-async def test_live_endpoint_is_503_when_disabled(client: AsyncClient) -> None:
+async def test_live_endpoint_is_503_when_disabled(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Pin the flag: a box with GEE configured would otherwise answer 200.
+    monkeypatch.setenv("GEE_ENABLED", "false")
+    get_settings.cache_clear()
     r = await client.get("/api/v1/imagery/live", params={"bbox": "73.7,18.38,73.78,18.45"})
     assert r.status_code == 503
     s = await client.get("/api/v1/imagery/status")
@@ -233,7 +238,7 @@ async def test_health_adds_gee_probe_only_when_enabled(monkeypatch: pytest.Monke
     from app.core import health
 
     monkeypatch.setattr(health, "CHECKS", {"postgres": ok})
-    off = await run_health_checks(Settings(app_env="test"))
+    off = await run_health_checks(Settings(app_env="test", gee_enabled=False))
     assert set(off) == {"postgres"}
     on = await run_health_checks(Settings(app_env="test", gee_enabled=True, gee_project="p"))
     assert set(on) == {"postgres", "gee"}

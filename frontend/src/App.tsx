@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { useObservations } from "@/api/hooks";
 import { AppSidebar } from "@/components/AppSidebar";
+import { EmptyState } from "@/components/States";
 import { AlertQueue } from "@/features/alerts/AlertQueue";
 import { AlertSheet } from "@/features/alerts/AlertSheet";
 import { IndicatorsPage } from "@/features/dashboard/IndicatorsPage";
@@ -73,6 +74,16 @@ export default function App() {
             <Route path="/trends" element={<TrendsPage />} />
             <Route path="/alerts" element={<AlertQueue />} />
             <Route path="/methodology" element={<MethodologyPage />} />
+            {/* A mistyped or stale link rendered a blank frame; say so instead. */}
+            <Route
+              path="*"
+              element={
+                <EmptyState
+                  title="Page not found"
+                  hint="That address does not exist. Pick a section from the left."
+                />
+              }
+            />
           </Routes>
         </main>
       </div>

@@ -37,3 +37,16 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
     </div>
   );
 }
+
+/**
+ * `?wb=` is a shareable link, so a stale or mistyped id must say so rather than
+ * render an empty dashboard that reads like a healthy water body.
+ */
+export function NotFoundState({ id }: { id: string }) {
+  return (
+    <EmptyState
+      title="Water body not found"
+      hint={`Nothing in the registry with id "${id}". It may have been removed — pick one from the bar above.`}
+    />
+  );
+}

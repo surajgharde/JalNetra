@@ -33,7 +33,8 @@ import type {
 const V1 = "/api/v1";
 
 export const api = {
-  health: () => request<HealthResponse>("/health"),
+  // 503 is the documented "degraded" answer; only a transport failure is fatal.
+  health: () => request<HealthResponse>("/health", { acceptStatus: [503] }),
 
   waterBodies: {
     list: (q?: { district?: string; tier?: number; limit?: number; cursor?: string }) =>

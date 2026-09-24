@@ -24,6 +24,9 @@ def all_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         health_mod, "CHECKS", {"postgres": _ok, "redis": _ok, "minio": _ok}, raising=True
     )
+    # Optional probes are switched on by the environment (GEE_ENABLED); clear
+    # them so "every check passes" means these three, wherever this runs.
+    monkeypatch.setattr(health_mod, "OPTIONAL_CHECKS", {}, raising=True)
 
 
 async def test_health_ok(client: AsyncClient, all_ok: None) -> None:

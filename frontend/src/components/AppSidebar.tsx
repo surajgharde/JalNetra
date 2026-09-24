@@ -3,15 +3,38 @@ import { NavLink } from "react-router-dom";
 import { useHealth, useWaterBodies } from "@/api/hooks";
 import { cn } from "@/lib/utils";
 
-/** API reachability, parked at the foot of the rail. */
+/**
+ * API reachability, parked at the foot of the rail. "Degraded" and
+ * "unreachable" are different states: the API answers 503 with per-service
+ * detail when an upstream (Earth Search, Earth Engine) is down but the app
+ * itself is serving, and saying "unreachable" there sends people hunting the
+ * wrong fault. Red is reserved for no answer at all.
+ */
 function HealthDot() {
   const { data, isError } = useHealth();
-  const ok = data?.status === "ok";
-  const label = isError ? "API unreachable" : data ? `API ${data.status}` : "checking…";
+  const down = data ? Object.entries(data.services).filter(([, s]) => s.status !== "ok") : [];
+  const tone = isError ? "bad" : !data ? "unknown" : down.length ? "degraded" : "ok";
+  const label =
+    tone === "bad"
+      ? "API unreachable"
+      : tone === "unknown"
+        ? "checking…"
+        : tone === "degraded"
+          ? `API degraded · ${down.map(([n]) => n).join(", ")}`
+          : "API ok";
+  const title =
+    tone === "degraded"
+      ? down.map(([n, s]) => `${n}: ${s.error ?? "error"}`).join("\n")
+      : label;
   return (
-    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title={label}>
-      <span className={cn("h-2 w-2 rounded-full", isError ? "bg-red-500" : ok ? "bg-emerald-500" : "bg-amber-500")} />
-      {label}
+    <span className="flex items-start gap-1.5 text-xs text-muted-foreground" title={title}>
+      <span
+        className={cn(
+          "mt-1 h-2 w-2 shrink-0 rounded-full",
+          tone === "bad" ? "bg-red-500" : tone === "ok" ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <span className="min-w-0 break-words">{label}</span>
     </span>
   );
 }

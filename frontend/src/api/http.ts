@@ -32,6 +32,12 @@ export interface RequestOptions {
   query?: Query;
   body?: unknown;
   signal?: AbortSignal;
+  /**
+   * Statuses to parse as a normal response instead of throwing. For endpoints
+   * whose contract carries a useful body with a non-2xx code — /health answers
+   * 503 with the per-service detail that says *what* is degraded.
+   */
+  acceptStatus?: number[];
 }
 
 function detailOf(body: unknown, fallback: string): string {
@@ -56,7 +62,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
   });
-  if (!res.ok) {
+  if (!res.ok && !(opts.acceptStatus ?? []).includes(res.status)) {
     let body: unknown;
     try {
       body = await res.json();

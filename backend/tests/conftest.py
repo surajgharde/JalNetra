@@ -23,6 +23,17 @@ def _reset_settings_cache() -> None:
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+async def _close_cached_redis() -> AsyncIterator[None]:
+    """The API cache keeps one lru_cached client, but every test gets its own
+    event loop. Without this the client outlives its loop and a later test dies
+    in `Event loop is closed` while the old connection is torn down."""
+    yield
+    from app.core.cache import close_redis
+
+    await close_redis()
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Settings(app_env="test")
