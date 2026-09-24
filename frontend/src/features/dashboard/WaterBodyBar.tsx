@@ -25,27 +25,34 @@ const STATUS_DOT: Record<WaterBodyListItem["status"], string> = {
  */
 export function WaterBodyBar() {
   const [q, setQ] = useState("");
+  const [district, setDistrict] = useState("");
   const { data, isLoading, error, refetch } = useWaterBodies();
   const selected = useUi((s) => s.waterBodyId);
   const select = useUi((s) => s.selectWaterBody);
   const stripRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
 
+  // The registry spans several districts; the strip stays usable by narrowing.
+  const districts = useMemo(
+    () => [...new Set((data?.items ?? []).map((r) => r.district))].sort(),
+    [data],
+  );
+
   const items = useMemo(() => {
     const rows = data?.items ?? [];
     const needle = q.trim().toLowerCase();
-    const filtered = needle
-      ? rows.filter((r) =>
-          `${r.name} ${r.district}`.toLowerCase().includes(needle),
-        )
-      : rows;
+    const filtered = rows.filter(
+      (r) =>
+        (!district || r.district === district) &&
+        (!needle || `${r.name} ${r.district}`.toLowerCase().includes(needle)),
+    );
     return [...filtered].sort(
       (a, b) =>
         Number(b.open_alerts > 0) - Number(a.open_alerts > 0) ||
         a.tier - b.tier ||
         a.name.localeCompare(b.name),
     );
-  }, [data, q]);
+  }, [data, q, district]);
 
   // The strip scrolls; keep the selected body visible when it changes.
   useEffect(() => {
@@ -71,6 +78,22 @@ export function WaterBodyBar() {
           onChange={(e) => setQ(e.target.value)}
         />
       </label>
+
+      {districts.length > 1 && (
+        <select
+          className="shrink-0 rounded-md border bg-card px-1.5 py-1.5 text-xs"
+          value={district}
+          onChange={(e) => setDistrict(e.target.value)}
+          aria-label="District"
+        >
+          <option value="">All districts</option>
+          {districts.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+      )}
 
       <div className="relative min-w-0 flex-1">
         <div
