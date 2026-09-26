@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
-import { LineChart } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ChartSpline, LineChart } from "lucide-react";
 import { useIndicators, useWaterBody } from "@/api/hooks";
 import type { ZoneIndicator } from "@/api/types";
 import { Disclaimer } from "@/components/Disclaimer";
@@ -35,9 +35,9 @@ function Row({
 }) {
   return (
     <tr
-      className={cn("cursor-pointer border-b last:border-0 hover:bg-accent/50", active && "bg-accent")}
+      className={cn("group cursor-pointer border-b last:border-0 hover:bg-accent/50", active && "bg-accent")}
       onClick={onPick}
-      title={r.scientific_basis}
+      title={`${r.scientific_basis} Click to plot this indicator over time.`}
     >
       <td className="py-1.5 pr-2 text-xs font-medium leading-tight">{r.display_name}</td>
       <td className="tabular py-1.5 pr-3 text-right font-mono text-xs">{fmtNum(r.value)}</td>
@@ -52,11 +52,16 @@ function Row({
           <td className={cn("tabular py-1.5 pr-3 text-right font-mono text-xs", zClass(r.z_score, r.baseline_status))}>
             {fmtSigned(r.z_score)}
           </td>
-          <td className={cn("tabular py-1.5 text-right font-mono text-xs", zClass(r.z_score, r.baseline_status))}>
+          <td className={cn("tabular py-1.5 pr-1 text-right font-mono text-xs", zClass(r.z_score, r.baseline_status))}>
             {fmtPct(r.deviation_pct)}
           </td>
         </>
       )}
+      {/* A quiet hint that clicking plots this indicator's history on the
+       * next screen -- only visible on hover/focus so the table stays calm. */}
+      <td className="w-5 py-1.5 pl-1 text-right text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+        <ChartSpline className="ml-auto h-3.5 w-3.5" />
+      </td>
     </tr>
   );
 }
@@ -71,6 +76,7 @@ export function IndicatorsPage() {
   const selectIndicator = useUi((s) => s.selectIndicator);
   const body = useWaterBody(waterBodyId);
   const { data, isLoading, error, refetch } = useIndicators(waterBodyId, date ?? undefined);
+  const navigate = useNavigate();
 
   if (!waterBodyId)
     return <EmptyState title="Select a water body" hint="Pick one from the bar above to see its indicators." />;
@@ -120,6 +126,12 @@ export function IndicatorsPage() {
         {data && !data.scene_id && (
           <EmptyState title="No indicators yet" hint="The pipeline has not processed a scene for this body." />
         )}
+        {data && zones.length > 0 && (
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <ChartSpline className="h-3 w-3 shrink-0" />
+            Click any indicator to visualize its trend against the seasonal baseline.
+          </p>
+        )}
         <div className="grid items-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {zones.map((z) => {
             const scored = z.indicators.some((r) => r.baseline_status === "usable");
@@ -148,7 +160,8 @@ export function IndicatorsPage() {
                         <th className="pb-1 pr-3 text-right font-medium">Now</th>
                         <th className="pb-1 pr-3 text-right font-medium">Baseline</th>
                         {scored && <th className="pb-1 pr-3 text-right font-medium">z</th>}
-                        {scored && <th className="pb-1 text-right font-medium">Dev.</th>}
+                        {scored && <th className="pb-1 pr-1 text-right font-medium">Dev.</th>}
+                        <th className="pb-1 pl-1" aria-hidden />
                       </tr>
                     </thead>
                     <tbody>
@@ -161,6 +174,7 @@ export function IndicatorsPage() {
                           onPick={() => {
                             selectIndicator(r.key);
                             selectZone(z.zone_id);
+                            navigate("/trends");
                           }}
                         />
                       ))}

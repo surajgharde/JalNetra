@@ -1,4 +1,5 @@
 import { CloudRain, FileText, MapPin } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "@/api/client";
 import { useAlert, useSetAlertStatus } from "@/api/hooks";
 import type { AlertOut, AlertStatus } from "@/api/types";
@@ -52,6 +53,19 @@ function Body({ alert }: { alert: AlertOut }) {
   const selectZone = useUi((s) => s.selectZone);
   const openAlert = useUi((s) => s.openAlert);
   const ctx = alert.context;
+
+  // Sets the map's selection; navigation itself is a real <Link to="/">
+  // (below), the same asChild pattern the working "Investigation brief"
+  // button already uses -- not a bare onClick + useNavigate(), which turned
+  // out to leave the button unresponsive (Radix Dialog's own close/focus
+  // handling on this same click apparently swallowed the programmatic
+  // navigation before React Router could act on it).
+  function selectOnMap() {
+    selectWaterBody(alert.water_body.id);
+    selectDate(alert.observed_on);
+    selectZone(alert.zone.id);
+    openAlert(null);
+  }
 
   return (
     <div className="space-y-4 p-5">
@@ -143,8 +157,9 @@ function Body({ alert }: { alert: AlertOut }) {
                   priority {t.priority_score === null || t.priority_score === undefined ? "—" : Math.round(t.priority_score)} · conf{" "}
                   {t.confidence === null || t.confidence === undefined ? "—" : t.confidence.toFixed(2)}
                 </span>
-                <button
+                <Link
                   className="ml-auto text-primary hover:underline"
+                  to="/"
                   onClick={() => {
                     selectWaterBody(alert.water_body.id);
                     selectDate(t.observed_at.slice(0, 10));
@@ -153,7 +168,7 @@ function Body({ alert }: { alert: AlertOut }) {
                   }}
                 >
                   view scene
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
@@ -165,17 +180,10 @@ function Body({ alert }: { alert: AlertOut }) {
                 <FileText className="h-3.5 w-3.5" /> Investigation brief (PDF)
               </a>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                selectWaterBody(alert.water_body.id);
-                selectDate(alert.observed_on);
-                selectZone(alert.zone.id);
-                openAlert(null);
-              }}
-            >
-              <MapPin className="h-3.5 w-3.5" /> Show on map
+            <Button asChild variant="outline" size="sm">
+              <Link to="/" onClick={selectOnMap}>
+                <MapPin className="h-3.5 w-3.5" /> Show on map
+              </Link>
             </Button>
           </div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-muted-foreground">
