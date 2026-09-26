@@ -1,14 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Route, Routes, useLocation, useSearchParams } from "react-router-dom";
-import { useObservations } from "@/api/hooks";
+import { useObservations, useTouchRecent } from "@/api/hooks";
 import { AppSidebar } from "@/components/AppSidebar";
 import { EmptyState } from "@/components/States";
+import { Toaster } from "@/components/Toaster";
 import { AlertQueue } from "@/features/alerts/AlertQueue";
 import { AlertSheet } from "@/features/alerts/AlertSheet";
 import { IndicatorsPage } from "@/features/dashboard/IndicatorsPage";
 import { Overview } from "@/features/dashboard/Overview";
 import { TrendsPage } from "@/features/dashboard/TrendsPage";
 import { WaterBodyBar } from "@/features/dashboard/WaterBodyBar";
+import { LakeDetailsDrawer } from "@/features/lake/LakeDetailsDrawer";
 import { MethodologyPage } from "@/features/methodology/MethodologyPage";
 import { useUi } from "@/store/ui";
 
@@ -38,6 +40,28 @@ function UrlSync() {
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waterBodyId, alertId, pathname]);
+  return null;
+}
+
+/**
+ * Records a "recently inspected" entry (S14) whenever a water body becomes
+ * the dashboard's selection or is opened in the quick-look drawer. One place
+ * for this rather than scattering `touch` calls through every entry point
+ * (the water-body bar, alert links, the drawer's own "view dashboard" button).
+ */
+function RecentHistorySync() {
+  const waterBodyId = useUi((s) => s.waterBodyId);
+  const detailsWaterBodyId = useUi((s) => s.detailsWaterBodyId);
+  const touch = useTouchRecent();
+  const last = useRef<string | null>(null);
+
+  useEffect(() => {
+    const id = detailsWaterBodyId ?? waterBodyId;
+    if (!id || id === last.current) return;
+    last.current = id;
+    touch.mutate(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waterBodyId, detailsWaterBodyId]);
   return null;
 }
 
@@ -89,7 +113,10 @@ export default function App() {
       </div>
       <UrlSync />
       <DateSync />
+      <RecentHistorySync />
       <AlertSheet />
+      <LakeDetailsDrawer />
+      <Toaster />
     </div>
   );
 }

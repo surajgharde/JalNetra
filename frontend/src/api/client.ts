@@ -9,8 +9,12 @@ import type {
   AlertList,
   AlertOut,
   AlertStatusUpdate,
+  DiscoverAtPointRequest,
+  DiscoverAtPointResponse,
   HealthResponse,
   ImageryStatus,
+  ImportDynamicRequest,
+  ImportDynamicResponse,
   Methodology,
   IndicatorsResponse,
   IngestJobRequest,
@@ -19,7 +23,11 @@ import type {
   LiveImagery,
   LiveImageryQuery,
   ObservationList,
+  PlaceSuggestResponse,
   RasterLayer,
+  RecentList,
+  SearchAndDiscoverRequest,
+  SearchAndDiscoverResponse,
   SeriesResponse,
   TileStyle,
   ValidationIn,
@@ -28,6 +36,9 @@ import type {
   ValidationSummary,
   WaterBodyDetail,
   WaterBodyList,
+  WishlistItemIn,
+  WishlistItemOut,
+  WishlistList,
 } from "./types";
 
 const V1 = "/api/v1";
@@ -87,6 +98,46 @@ export const api = {
 
   /** How the platform works, generated from the code that does the work. */
   methodology: () => request<Methodology>(`${V1}/methodology`),
+
+  wishlist: {
+    list: () => request<WishlistList>(`${V1}/wishlist`),
+    add: (body: WishlistItemIn) =>
+      request<WishlistItemOut>(`${V1}/wishlist`, { method: "POST", body }),
+    remove: (itemId: number) =>
+      request<void>(`${V1}/wishlist/${itemId}`, { method: "DELETE" }),
+  },
+
+  history: {
+    recent: (limit?: number) => request<RecentList>(`${V1}/history/recent`, { query: { limit } }),
+    /** Fire-and-forget: records that this water body was just inspected. */
+    touch: (waterBodyId: string) =>
+      request<void>(`${V1}/history/recent/${encodeURIComponent(waterBodyId)}`, { method: "POST" }),
+  },
+
+  /** Geocode a place/water body name and list OSM water polygons around it (S14). */
+  discovery: {
+    searchAndDiscover: (body: SearchAndDiscoverRequest) =>
+      request<SearchAndDiscoverResponse>(`${V1}/water-bodies/search-and-discover`, {
+        method: "POST",
+        body,
+      }),
+    /** Live search-bar autocomplete, India-only, cached briefly server-side. */
+    placeSuggestions: (query: string, limit = 5) =>
+      request<PlaceSuggestResponse>(`${V1}/water-bodies/place-suggestions`, {
+        query: { q: query, limit },
+      }),
+    /** Scan around a coordinate the caller already resolved (e.g. an autocomplete pick). */
+    discoverAtPoint: (body: DiscoverAtPointRequest) =>
+      request<DiscoverAtPointResponse>(`${V1}/water-bodies/discover`, {
+        method: "POST",
+        body,
+      }),
+    importDynamic: (body: ImportDynamicRequest) =>
+      request<ImportDynamicResponse>(`${V1}/water-bodies/import-dynamic`, {
+        method: "POST",
+        body,
+      }),
+  },
 
   /** Live Sentinel-2 imagery rendered by Google Earth Engine (no ingestion involved). */
   imagery: {

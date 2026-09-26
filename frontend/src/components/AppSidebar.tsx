@@ -1,7 +1,22 @@
-import { BookOpen, Droplets, LayoutDashboard, LineChart, ListOrdered, Table2 } from "lucide-react";
+import type { ReactNode } from "react";
+import {
+  BookOpen,
+  Clock,
+  Droplets,
+  LayoutDashboard,
+  LineChart,
+  ListOrdered,
+  Star,
+  Table2,
+  X,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { useHealth, useWaterBodies } from "@/api/hooks";
+import { formatDistanceToNowStrict } from "date-fns";
+import { useHealth, useRecentHistory, useRemoveFromWishlist, useWaterBodies, useWishlist } from "@/api/hooks";
+import type { RecentItem, WishlistItemOut } from "@/api/types";
+import { STATUS_DOT, fmtKm2, statusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useUi } from "@/store/ui";
 
 /**
  * API reachability, parked at the foot of the rail. "Degraded" and
@@ -46,6 +61,105 @@ const NAV = [
   { to: "/alerts", end: false, icon: ListOrdered, label: "Priority queue" },
   { to: "/methodology", end: false, icon: BookOpen, label: "Methodology" },
 ] as const;
+
+/** One row shared by the wishlist and recent-history sections: a status dot,
+ * the label, a status/area caption, and an optional trailing slot (remove
+ * button, or a relative timestamp). Clicking opens the quick-look drawer
+ * (S14) rather than switching the whole dashboard's selected water body. */
+function SidebarRow({
+  label,
+  caption,
+  status,
+  onClick,
+  trailing,
+}: {
+  label: string;
+  caption: string;
+  status: "alert" | "watch" | "normal" | "baseline_building" | "no_data";
+  onClick: () => void;
+  trailing?: ReactNode;
+}) {
+  return (
+    <div className="group flex items-center gap-1.5 rounded px-2 py-1.5 hover:bg-accent">
+      <button onClick={onClick} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />
+        <span className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate text-xs">{label}</span>
+          <span className="block truncate text-[10px] text-muted-foreground">{caption}</span>
+        </span>
+      </button>
+      {trailing}
+    </div>
+  );
+}
+
+function WishlistSection() {
+  const { data } = useWishlist();
+  const openDetails = useUi((s) => s.openDetails);
+  const remove = useRemoveFromWishlist();
+  const items = data?.items ?? [];
+  if (!items.length) return null;
+
+  return (
+    <div className="border-t pt-2">
+      <div className="flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span>Wishlist</span>
+        <Star className="h-3 w-3 text-amber-500" />
+      </div>
+      <div className="mt-1 space-y-0.5">
+        {items.map((item: WishlistItemOut) => (
+          <SidebarRow
+            key={item.id}
+            label={item.custom_name}
+            caption={`${item.water_body.district} · ${fmtKm2(item.water_body.area_km2)} · ${statusLabel[item.water_body.status] ?? item.water_body.status}`}
+            status={item.water_body.status}
+            onClick={() => openDetails(item.water_body_id)}
+            trailing={
+              <button
+                className="shrink-0 rounded p-0.5 opacity-0 hover:bg-muted group-hover:opacity-100"
+                title="Remove from wishlist"
+                disabled={remove.isPending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  remove.mutate(item.id);
+                }}
+              >
+                <X className="h-3 w-3 text-muted-foreground" />
+              </button>
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecentHistorySection() {
+  const { data } = useRecentHistory(10);
+  const openDetails = useUi((s) => s.openDetails);
+  const items = data?.items ?? [];
+  if (!items.length) return null;
+
+  return (
+    <div className="border-t pt-2">
+      <div className="flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span>Recent history</span>
+        <Clock className="h-3 w-3 text-primary" />
+      </div>
+      <div className="mt-1 space-y-0.5">
+        {items.map((item: RecentItem) => (
+          <SidebarRow
+            key={item.water_body_id}
+            label={item.water_body.name}
+            caption={`${formatDistanceToNowStrict(new Date(item.last_viewed_at), { addSuffix: true })}${item.wishlisted ? " · saved" : ""}`}
+            status={item.water_body.status}
+            onClick={() => openDetails(item.water_body_id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The app rail: brand, the five sections, and API health. Water-body
@@ -99,6 +213,9 @@ export function AppSidebar() {
             )}
           </NavLink>
         ))}
+
+        <WishlistSection />
+        <RecentHistorySection />
       </nav>
 
       <div className="space-y-1 border-t p-3">

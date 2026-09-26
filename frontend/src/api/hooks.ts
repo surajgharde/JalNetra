@@ -7,9 +7,13 @@ import { api } from "./client";
 import type {
   AlertFilters,
   AlertStatusUpdate,
+  DiscoverAtPointRequest,
+  ImportDynamicRequest,
   IngestJobRequest,
   LiveImageryQuery,
+  SearchAndDiscoverRequest,
   ValidationIn,
+  WishlistItemIn,
 } from "./types";
 
 export const keys = {
@@ -30,6 +34,8 @@ export const keys = {
   tileStyles: ["tile-styles"] as const,
   imageryStatus: ["imagery-status"] as const,
   liveImagery: (q: LiveImageryQuery) => ["live-imagery", q] as const,
+  wishlist: ["wishlist"] as const,
+  recent: (limit?: number) => ["recent-history", limit ?? null] as const,
 };
 
 export const useHealth = () =>
@@ -146,3 +152,84 @@ export const useJob = (id: string | null) =>
       return s === "done" || s === "failed" ? false : 2_000;
     },
   });
+
+
+// --- Wishlist & recent history (S14) -----------------------------------------------
+
+/** The saved-water-bodies sidebar list; each row already carries live status. */
+export const useWishlist = () =>
+  useQuery({ queryKey: keys.wishlist, queryFn: api.wishlist.list, staleTime: 30_000 });
+
+export function useAddToWishlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: WishlistItemIn) => api.wishlist.add(body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.wishlist }),
+  });
+}
+
+export function useRemoveFromWishlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: number) => api.wishlist.remove(itemId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.wishlist }),
+  });
+}
+
+/** The last few water bodies inspected; the sidebar shows this without polling. */
+export const useRecentHistory = (limit?: number) =>
+  useQuery({ queryKey: keys.recent(limit), queryFn: () => api.history.recent(limit), staleTime: 15_000 });
+
+/**
+ * Records a water-body view. Fire-and-forget from the caller's point of view —
+ * failures are swallowed (a missed history entry is not worth surfacing an
+ * error for) but the recent list is still refreshed on success so a newly
+ * viewed body appears without a manual reload.
+ */
+export function useTouchRecent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (waterBodyId: string) => api.history.touch(waterBodyId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["recent-history"] }),
+    onError: () => {
+      /* best-effort: a failed history write should not surface to the user */
+    },
+  });
+}
+
+// --- Geographic search & discovery (S14) --------------------------------------------
+
+/** Triggered by the map's "Identify water bodies" action, not on every keystroke. */
+export function useSearchAndDiscover() {
+  return useMutation({
+    mutationFn: (body: SearchAndDiscoverRequest) => api.discovery.searchAndDiscover(body),
+  });
+}
+
+/** Debounced, India-only autocomplete for the search bar; `null` disables the query. */
+export function usePlaceSuggestions(query: string | null) {
+  return useQuery({
+    queryKey: ["place-suggestions", query ?? ""],
+    queryFn: () => api.discovery.placeSuggestions(query!),
+    enabled: !!query,
+    staleTime: 60_000,
+  });
+}
+
+/** Triggered by picking an autocomplete suggestion: scans straight from its lat/lon. */
+export function useDiscoverAtPoint() {
+  return useMutation({
+    mutationFn: (body: DiscoverAtPointRequest) => api.discovery.discoverAtPoint(body),
+  });
+}
+
+export function useImportDynamic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ImportDynamicRequest) => api.discovery.importDynamic(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["water-bodies"] });
+      void qc.invalidateQueries({ queryKey: keys.wishlist });
+    },
+  });
+}

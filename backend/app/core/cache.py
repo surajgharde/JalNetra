@@ -42,8 +42,14 @@ async def cached_json(
     producer: Callable[[], Awaitable[Any]],
     *,
     settings: Settings | None = None,
+    ttl_s: int | None = None,
 ) -> tuple[Any, bool]:
-    """(value, hit). ``producer`` builds the JSON-serialisable value on a miss."""
+    """(value, hit). ``producer`` builds the JSON-serialisable value on a miss.
+
+    ``ttl_s`` overrides ``settings.api_cache_ttl_s`` for callers whose result is
+    valid far longer (or shorter) than the 5-minute default -- a geocoded place
+    or a set of OSM water polygons doesn't move for a day.
+    """
     settings = settings or get_settings()
     if not settings.api_cache_enabled:
         return await producer(), False
@@ -54,8 +60,9 @@ async def cached_json(
     except Exception as exc:
         log.warning("cache read failed", extra={"error": str(exc)})
     value = await producer()
+    ttl = settings.api_cache_ttl_s if ttl_s is None else ttl_s
     try:
-        await get_redis().set(key, json.dumps(value, default=str), ex=settings.api_cache_ttl_s)
+        await get_redis().set(key, json.dumps(value, default=str), ex=ttl)
     except Exception as exc:
         log.warning("cache write failed", extra={"error": str(exc)})
     return value, False

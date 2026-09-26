@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 import httpx
 import redis.asyncio as aioredis
@@ -64,19 +64,50 @@ CHECKS: dict[str, Check] = {
     "minio": check_minio,
     "stac": check_stac,
 }
+# Probes that leave the machine, and so get health_remote_timeout_s instead of the
+# tighter local ceiling. A slow internet link is not a degraded service.
+#
+# They are also the probes that must not depool the API: everything except live
+# imagery and fresh ingestion reads the database, so the instance still serves most
+# of its traffic when a satellite source is unreachable, and there is no healthier
+# instance to fail over to. Anything NOT listed here counts as core -- a new local
+# dependency is load-bearing until someone says otherwise.
+REMOTE_CHECKS: frozenset[str] = frozenset({"stac", "gee"})
+
+
+def core_is_healthy(services: Mapping[str, ServiceStatus]) -> bool:
+    """True when every dependency the API cannot serve without is answering.
+
+    Drives the HTTP status: 503 means "take this instance out of rotation", which a
+    blip on a remote satellite source does not warrant. Those still show up as
+    ``degraded`` in the body so the UI can say what is impaired.
+    """
+    return all(s.status == "ok" for name, s in services.items() if name not in REMOTE_CHECKS)
+
+
 # Probes that only run when the feature is switched on.
 OPTIONAL_CHECKS: dict[str, tuple[Callable[[Settings], bool], Check]] = {
     "gee": (lambda s: s.gee_enabled, check_gee),
 }
 
 
+def _timeout_for(name: str, settings: Settings) -> float:
+    if name in REMOTE_CHECKS:
+        return max(settings.health_remote_timeout_s, settings.health_check_timeout_s)
+    return settings.health_check_timeout_s
+
+
 async def _run(name: str, check: Check, settings: Settings) -> ServiceStatus:
     started = time.perf_counter()
     try:
-        await asyncio.wait_for(check(settings), timeout=settings.health_check_timeout_s)
+        await asyncio.wait_for(check(settings), timeout=_timeout_for(name, settings))
         return ServiceStatus(status="ok", latency_ms=_elapsed_ms(started))
     except TimeoutError:
-        return ServiceStatus(status="error", latency_ms=_elapsed_ms(started), error="timeout")
+        return ServiceStatus(
+            status="error",
+            latency_ms=_elapsed_ms(started),
+            error=f"timeout after {_timeout_for(name, settings):g}s",
+        )
     except Exception as exc:  # a probe must never raise out of /health
         return ServiceStatus(
             status="error",

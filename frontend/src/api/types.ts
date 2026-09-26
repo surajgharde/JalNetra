@@ -109,3 +109,45 @@ export type TileStyle = {
   colormap: Record<string, number[]> | null;
   nodata: number | null;
 };
+
+// --- Wishlist & recent history (S14) ---------------------------------------------
+
+export type WishlistItemIn = S["WishlistItemIn"];
+export type WishlistItemOut = S["WishlistItemOut"];
+export type WishlistList = S["WishlistList"];
+export type RecentItem = S["RecentItem"];
+export type RecentList = S["RecentList"];
+
+// --- Geographic search & discovery (S14) ------------------------------------------
+
+export type SearchAndDiscoverRequest = S["SearchAndDiscoverRequest"];
+export type SearchAndDiscoverResponse = S["SearchAndDiscoverResponse"];
+export type DiscoveredWaterBodyOut = S["DiscoveredWaterBodyOut"];
+export type ImportDynamicRequest = S["ImportDynamicRequest"];
+export type ImportDynamicResponse = S["ImportDynamicResponse"];
+
+/** Live search-bar autocomplete: GET /api/v1/water-bodies/place-suggestions. */
+export interface PlaceSuggestion {
+  lat: number;
+  lon: number;
+  display_name: string;
+  district: string | null;
+  state: string | null;
+}
+export interface PlaceSuggestResponse {
+  query: string;
+  items: PlaceSuggestion[];
+}
+
+/** Scan a coordinate the caller already resolved: POST /api/v1/water-bodies/discover. */
+export interface DiscoverAtPointRequest {
+  latitude: number;
+  longitude: number;
+  radius_km?: number;
+}
+export interface DiscoverAtPointResponse {
+  centre: Position;
+  radius_km: number;
+  items: DiscoveredWaterBodyOut[];
+  total: number;
+}

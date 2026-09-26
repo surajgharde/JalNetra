@@ -180,6 +180,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/water-bodies/search-and-discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search And Discover
+         * @description Resolve a place or water body name (e.g. "Nagpur", "Ambazari Lake") and
+         *     list every OSM water polygon within ``radius_km`` of it, largest first.
+         *
+         *     Read-only: nothing is written to the registry until a result is posted to
+         *     ``/water-bodies/import-dynamic``. The geocode and the OSM scan are each
+         *     cached for a day (both are calls to shared public services with usage
+         *     limits); which candidates already overlap a registered water body is
+         *     checked fresh every time, since that reflects live registry state.
+         */
+        post: operations["search_and_discover_api_v1_water_bodies_search_and_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/water-bodies/import-dynamic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Dynamic
+         * @description Register a water body found through ``search-and-discover``: upsert it
+         *     into ``water_bodies`` and generate its Voronoi monitoring zones. Requires
+         *     ``X-API-Key``.
+         *
+         *     Re-importing the same water body (same id, derived or given) updates it in
+         *     place and answers 200 rather than failing, matching how the bulk loader's
+         *     upsert already behaves.
+         */
+        post: operations["import_dynamic_api_v1_water_bodies_import_dynamic_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/alerts": {
         parameters: {
             query?: never;
@@ -395,11 +448,10 @@ export interface paths {
         get: operations["get_photo_api_v1_validations__validation_id__photo_get"];
         put?: never;
         /**
-         * Read Bounded
-         * @description Read the upload in chunks and stop as soon as it exceeds the limit, so an
-         *     oversized body is never fully buffered in memory.
+         * Upload Photo
+         * @description Attach a site photo to a validation (stored in MinIO). Requires ``X-API-Key``.
          */
-        post: operations["_read_bounded_api_v1_validations__validation_id__photo_post"];
+        post: operations["upload_photo_api_v1_validations__validation_id__photo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -581,6 +633,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/wishlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Wishlist
+         * @description Saved water bodies, newest first, each with its latest water-quality status.
+         */
+        get: operations["list_wishlist_api_v1_wishlist_get"];
+        put?: never;
+        /**
+         * Add To Wishlist
+         * @description Save a water body under a custom label. Requires ``X-API-Key``.
+         *
+         *     Saving one that is already saved renames it and answers 200 rather than
+         *     failing, so the star button is idempotent.
+         */
+        post: operations["add_to_wishlist_api_v1_wishlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/wishlist/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove From Wishlist
+         * @description Drop a water body from the wishlist. Requires ``X-API-Key``.
+         */
+        delete: operations["remove_from_wishlist_api_v1_wishlist__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Recent
+         * @description The water bodies most recently inspected, most recent first.
+         */
+        get: operations["list_recent_api_v1_history_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/recent/{water_body_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Touch Recent
+         * @description Record that a water body was just inspected.
+         *
+         *     Unauthenticated on purpose: this is the UI reporting navigation, it writes
+         *     no user content, and the table is capped at the handful of rows the sidebar
+         *     shows, so it cannot be grown into a problem.
+         */
+        post: operations["touch_recent_api_v1_history_recent__water_body_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -727,9 +870,12 @@ export interface components {
             /** By */
             by?: string | null;
         };
-        /** Body__read_bounded_api_v1_validations__validation_id__photo_post */
-        Body__read_bounded_api_v1_validations__validation_id__photo_post: {
-            /** File */
+        /** Body_upload_photo_api_v1_validations__validation_id__photo_post */
+        Body_upload_photo_api_v1_validations__validation_id__photo_post: {
+            /**
+             * File
+             * @description JPEG, PNG or WebP, up to 15 MB
+             */
             file: string;
         };
         /** ContributionOut */
@@ -746,6 +892,51 @@ export interface components {
             parts?: {
                 [key: string]: number;
             };
+        };
+        /** DiscoveredWaterBodyOut */
+        DiscoveredWaterBodyOut: {
+            /** Osm Id */
+            osm_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "reservoir" | "lake" | "river_stretch";
+            /** Osm Water Tag */
+            osm_water_tag: string | null;
+            /** Area Km2 */
+            area_km2: number;
+            /** Suggested Tier */
+            suggested_tier: number;
+            /**
+             * Centroid
+             * @description [lon, lat]
+             */
+            centroid: number[];
+            /**
+             * Bbox
+             * @description [minlon, minlat, maxlon, maxlat]
+             */
+            bbox: number[];
+            /**
+             * Distance Km
+             * @description distance from the search centre
+             */
+            distance_km: number;
+            /**
+             * Geometry
+             * @description GeoJSON polygon/multipolygon, for a map preview
+             */
+            geometry: {
+                [key: string]: unknown;
+            };
+            /**
+             * Already Registered Id
+             * @description id of the existing water body this overlaps, if any
+             */
+            already_registered_id?: string | null;
         };
         /** Evidence */
         Evidence: {
@@ -894,6 +1085,73 @@ export interface components {
             error?: string | null;
             /** Visualisations */
             visualisations: components["schemas"]["LiveVisOut"][];
+        };
+        /**
+         * ImportDynamicRequest
+         * @description The exact discovered water body the user selected, re-posted so the
+         *     import uses what they saw rather than re-querying Overpass (which could
+         *     answer differently a second later).
+         * @example {
+         *       "district": "Nagpur",
+         *       "geometry": {
+         *         "coordinates": [],
+         *         "type": "Polygon"
+         *       },
+         *       "kind": "lake",
+         *       "name": "Ambazari Lake",
+         *       "osm_id": "way/123456",
+         *       "source": "osm"
+         *     }
+         */
+        ImportDynamicRequest: {
+            /** Osm Id */
+            osm_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "reservoir" | "lake" | "river_stretch";
+            /**
+             * Geometry
+             * @description GeoJSON polygon/multipolygon from the scan
+             */
+            geometry: {
+                [key: string]: unknown;
+            };
+            /** District */
+            district: string;
+            /**
+             * Water Body Id
+             * @description override the derived id, e.g. wb_ambazari_lake
+             */
+            water_body_id?: string | null;
+            /** Tier */
+            tier?: number | null;
+            /**
+             * Source
+             * @default osm
+             */
+            source: string;
+        };
+        /** ImportDynamicResponse */
+        ImportDynamicResponse: {
+            /** Water Body Id */
+            water_body_id: string;
+            /**
+             * Created
+             * @description false when this updated an already-imported water body
+             */
+            created: boolean;
+            /** Tier */
+            tier: number;
+            /** Area Km2 */
+            area_km2: number;
+            /** Mgrs Tiles */
+            mgrs_tiles: string[];
+            /** N Zones */
+            n_zones: number;
         };
         /** IndicatorDoc */
         IndicatorDoc: {
@@ -1343,6 +1601,112 @@ export interface components {
             total: number;
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /** RecentItem */
+        RecentItem: {
+            /** Water Body Id */
+            water_body_id: string;
+            /**
+             * Last Viewed At
+             * Format: date-time
+             */
+            last_viewed_at: string;
+            /**
+             * Wishlisted
+             * @description true when this water body is also on the wishlist
+             */
+            wishlisted: boolean;
+            water_body: components["schemas"]["WaterBodyListItem"];
+        };
+        /** RecentList */
+        RecentList: {
+            /** Items */
+            items: components["schemas"]["RecentItem"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * SearchAndDiscoverRequest
+         * @example {
+         *       "query": "Nagpur",
+         *       "radius_km": 20
+         *     }
+         */
+        SearchAndDiscoverRequest: {
+            /**
+             * Query
+             * @description a place or water body name
+             */
+            query: string;
+            /**
+             * Radius Km
+             * @description defaults to Settings.discovery_default_radius_km when omitted
+             */
+            radius_km?: number | null;
+        };
+        /**
+         * SearchAndDiscoverResponse
+         * @example {
+         *       "centre": [
+         *         79.0882,
+         *         21.1458
+         *       ],
+         *       "district": "Nagpur",
+         *       "items": [
+         *         {
+         *           "area_km2": 1.52,
+         *           "bbox": [
+         *             79.023,
+         *             21.123,
+         *             79.046,
+         *             21.139
+         *           ],
+         *           "centroid": [
+         *             79.0417,
+         *             21.1312
+         *           ],
+         *           "distance_km": 3.1,
+         *           "geometry": {
+         *             "coordinates": [],
+         *             "type": "Polygon"
+         *           },
+         *           "kind": "lake",
+         *           "name": "Ambazari Lake",
+         *           "osm_id": "way/123456",
+         *           "osm_water_tag": "lake",
+         *           "suggested_tier": 2
+         *         }
+         *       ],
+         *       "query": "Nagpur",
+         *       "radius_km": 20,
+         *       "resolved_place": "Nagpur, Maharashtra, India",
+         *       "state": "Maharashtra",
+         *       "total": 1
+         *     }
+         */
+        SearchAndDiscoverResponse: {
+            /** Query */
+            query: string;
+            /** Resolved Place */
+            resolved_place: string;
+            /**
+             * Centre
+             * @description [lon, lat] the query resolved to
+             */
+            centre: number[];
+            /**
+             * District
+             * @description best-effort district guess; the loader still needs one
+             */
+            district: string | null;
+            /** State */
+            state: string | null;
+            /** Radius Km */
+            radius_km: number;
+            /** Items */
+            items: components["schemas"]["DiscoveredWaterBodyOut"][];
+            /** Total */
+            total: number;
         };
         /** SeriesPoint */
         SeriesPoint: {
@@ -1872,6 +2236,53 @@ export interface components {
             /** District */
             district: string;
         };
+        /**
+         * WishlistItemIn
+         * @example {
+         *       "custom_name": "Nagpur Drinking Water Zone A",
+         *       "notes": "Upstream of the intake; check after every monsoon spell.",
+         *       "water_body_id": "wb_ambazari_lake"
+         *     }
+         */
+        WishlistItemIn: {
+            /**
+             * Water Body Id
+             * @description id of a registered water body
+             */
+            water_body_id: string;
+            /**
+             * Custom Name
+             * @description label to show in the sidebar; defaults to the water body's own name
+             */
+            custom_name?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** WishlistItemOut */
+        WishlistItemOut: {
+            /** Id */
+            id: number;
+            /** Water Body Id */
+            water_body_id: string;
+            /** Custom Name */
+            custom_name: string;
+            /** Notes */
+            notes: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** @description live status of the saved water body, same shape as /water-bodies */
+            water_body: components["schemas"]["WaterBodyListItem"];
+        };
+        /** WishlistList */
+        WishlistList: {
+            /** Items */
+            items: components["schemas"]["WishlistItemOut"][];
+            /** Total */
+            total: number;
+        };
         /** ZoneIndicator */
         ZoneIndicator: {
             /** Key */
@@ -1974,7 +2385,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description URL-encoded MinIO object key of a COG chip */
+                /** @description MinIO object key of a COG chip (may be URL-encoded) */
                 chip: string;
                 z: number;
                 x: number;
@@ -2221,6 +2632,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_and_discover_api_v1_water_bodies_search_and_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchAndDiscoverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchAndDiscoverResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_dynamic_api_v1_water_bodies_import_dynamic_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportDynamicRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportDynamicResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2620,18 +3097,18 @@ export interface operations {
             };
         };
     };
-    _read_bounded_api_v1_validations__validation_id__photo_post: {
+    upload_photo_api_v1_validations__validation_id__photo_post: {
         parameters: {
-            query: {
-                max_bytes: number;
-            };
+            query?: never;
             header?: never;
-            path?: never;
+            path: {
+                validation_id: number;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body__read_bounded_api_v1_validations__validation_id__photo_post"];
+                "multipart/form-data": components["schemas"]["Body_upload_photo_api_v1_validations__validation_id__photo_post"];
             };
         };
         responses: {
@@ -2896,6 +3373,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Methodology"];
+                };
+            };
+        };
+    };
+    list_wishlist_api_v1_wishlist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WishlistList"];
+                };
+            };
+        };
+    };
+    add_to_wishlist_api_v1_wishlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WishlistItemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WishlistItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_from_wishlist_api_v1_wishlist__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recent_api_v1_history_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    touch_recent_api_v1_history_recent__water_body_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                water_body_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

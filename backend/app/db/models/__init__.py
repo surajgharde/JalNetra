@@ -5,6 +5,7 @@ S4: indicator_observations (hypertable), indicator_runs. S5: baselines, rainfall
 (plus the indicator_weekly continuous aggregate, which has no ORM model).
 S6: anomaly_candidates, anomaly_runs. S7: candidate_scores, priority_models.
 S8: alerts, recipients, dispatches. S9: jobs, validations. S11: baseline_samples.
+S14: wishlist_items, recent_water_bodies (UI state over the registry).
 """
 
 from app.db.base import Base
@@ -17,6 +18,7 @@ from app.db.models.masks import RasterChip, WaterMaskRecord
 from app.db.models.registry import WaterBody, Zone
 from app.db.models.scenes import Scene, SceneIngestion
 from app.db.models.scoring import CandidateScore, PriorityModel
+from app.db.models.wishlist import RecentWaterBody, WishlistItem
 
 __all__ = [
     "Alert",
@@ -33,11 +35,13 @@ __all__ = [
     "PriorityModel",
     "Rainfall",
     "RasterChip",
+    "RecentWaterBody",
     "Recipient",
     "Scene",
     "SceneIngestion",
     "Validation",
     "WaterBody",
     "WaterMaskRecord",
+    "WishlistItem",
     "Zone",
 ]

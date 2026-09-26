@@ -4,7 +4,17 @@
  * pipeline job being watched. Server data never lives here (TanStack Query).
  */
 import { create } from "zustand";
-import type { LiveVisKey, RasterLayer } from "@/api/types";
+import type { DiscoveredWaterBodyOut, LiveVisKey, RasterLayer } from "@/api/types";
+
+/** Result of a place/coordinate search (S14): shared by the map's own search
+ * box and the top bar's autocomplete, so either one can fly the map and show
+ * the same discovered water bodies. */
+export interface SearchResult {
+  centre: [number, number]; // [lon, lat]
+  radiusKm: number;
+  district: string | null;
+  items: DiscoveredWaterBodyOut[];
+}
 
 interface UiState {
   waterBodyId: string | null;
@@ -15,9 +25,14 @@ interface UiState {
   showAlerts: boolean;
   showZones: boolean;
   alertId: string | null;
+  /** Quick-look drawer opened from the wishlist, recent history or a map pin;
+   * independent of `waterBodyId` so it never disturbs the main dashboard. */
+  detailsWaterBodyId: string | null;
   jobId: string | null;
   /** Live Sentinel-2 imagery from Google Earth Engine, independent of ingestion. */
   live: { enabled: boolean; vis: LiveVisKey; composite: boolean; days: number };
+  /** Active place/coordinate search result, or null when none is showing. */
+  search: SearchResult | null;
 
   selectWaterBody: (id: string | null) => void;
   selectDate: (date: string | null) => void;
@@ -27,8 +42,10 @@ interface UiState {
   setShowAlerts: (v: boolean) => void;
   setShowZones: (v: boolean) => void;
   openAlert: (id: string | null) => void;
+  openDetails: (id: string | null) => void;
   watchJob: (id: string | null) => void;
   setLive: (patch: Partial<UiState["live"]>) => void;
+  setSearchResult: (result: SearchResult | null) => void;
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -48,8 +65,10 @@ export const useUi = create<UiState>((set) => ({
   showAlerts: true,
   showZones: true,
   alertId: null,
+  detailsWaterBodyId: null,
   jobId: null,
   live: { enabled: false, vis: "truecolor", composite: false, days: 30 },
+  search: null,
 
   selectWaterBody: (id) => set({ waterBodyId: id, date: null, zoneId: null }),
   selectDate: (date) => set({ date }),
@@ -60,6 +79,8 @@ export const useUi = create<UiState>((set) => ({
   setShowAlerts: (showAlerts) => set({ showAlerts }),
   setShowZones: (showZones) => set({ showZones }),
   openAlert: (alertId) => set({ alertId }),
+  openDetails: (detailsWaterBodyId) => set({ detailsWaterBodyId }),
   watchJob: (jobId) => set({ jobId }),
   setLive: (patch) => set((s) => ({ live: { ...s.live, ...patch } })),
+  setSearchResult: (search) => set({ search }),
 }));

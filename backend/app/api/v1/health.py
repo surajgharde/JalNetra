@@ -4,7 +4,7 @@ from prometheus_client import CONTENT_TYPE_LATEST
 from app import __version__
 from app.core import metrics
 from app.core.config import Settings, get_settings
-from app.core.health import run_health_checks
+from app.core.health import core_is_healthy, run_health_checks
 from app.schemas.health import HealthResponse
 
 router = APIRouter(tags=["health"])
@@ -18,7 +18,10 @@ router = APIRouter(tags=["health"])
 async def health(response: Response, settings: Settings = Depends(get_settings)) -> HealthResponse:
     services = await run_health_checks(settings)
     all_ok = all(s.status == "ok" for s in services.values())
-    if not all_ok:
+    # 503 only when a core dependency is down. A remote satellite source that blips
+    # still reports "degraded" in the body -- the UI says which -- but must not make
+    # a load balancer depool an instance that can still serve almost every endpoint.
+    if not core_is_healthy(services):
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return HealthResponse(
         status="ok" if all_ok else "degraded",

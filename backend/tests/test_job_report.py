@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import csv
 import io
+import math
+import time
 from datetime import date
 
 import numpy as np
+import pytest
 
+from app.core.config import Settings
+from app.services.l12_delivery import job_report
 from app.services.l12_delivery.job_report import (
     CSV_COLUMNS,
     DayReport,
@@ -164,3 +169,118 @@ def test_day_helpers() -> None:
     assert abs((d.body_mean("ndti_turbidity") or 0) - (0.125 + 0.35 + 0.675) / 10.5) < 1e-9
     assert d.status_text() == "observed"
     assert _day(date(2026, 5, 6), observed=False).status_text() == "too cloudy"
+
+
+# --- satellite image time budget -------------------------------------------------
+#
+# A report spans up to report_max_day_pages days, each wanting one Earth Engine
+# thumbnail. Serial fetches on a slow link ran past the client's timeout, so the PDF
+# never finished, never got stored, and every retry started over.
+
+
+def test_budget_allows_fetches_until_the_limit_is_reached() -> None:
+    b = job_report._Budget(limit_s=10.0)
+    assert b.spent() is False
+    b.charge(4.0)
+    assert b.spent() is False
+    b.charge(6.0)
+    assert b.spent() is True
+    assert b.skipped == 1
+
+
+def test_budget_of_zero_or_less_never_spends() -> None:
+    """0 disables the cap rather than blocking every image."""
+    b = job_report._Budget(limit_s=0.0)
+    b.charge(1000.0)
+    assert b.spent() is False
+    assert b.skipped == 0
+
+
+def test_satellite_image_skips_gee_once_the_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.l03_ingestion import gee
+
+    calls = {"n": 0}
+
+    def slow_thumbnail(*args: object, **kwargs: object) -> bytes:
+        calls["n"] += 1
+        return b"PNG-stub"
+
+    monkeypatch.setattr(gee, "truecolor_thumbnail", slow_thumbnail)
+    settings = Settings(
+        app_env="test",
+        gee_enabled=True,
+        gee_project="p",
+        report_satellite_source="gee",
+        report_image_budget_s=5.0,
+    )
+    budget = job_report._Budget(settings.report_image_budget_s)
+    bbox = (73.70, 18.38, 73.78, 18.45)
+
+    png, label = job_report._satellite_image(
+        None, None, bbox, date(2026, 5, 3), None, settings, budget
+    )
+    assert png == b"PNG-stub"
+    assert calls["n"] == 1
+
+    budget.charge(99.0)  # the link was slow; the allowance is gone
+    png, label = job_report._satellite_image(
+        None, None, bbox, date(2026, 5, 4), None, settings, budget
+    )
+    assert calls["n"] == 1  # no second remote fetch
+    assert png is None
+    assert "budget" in label
+    assert budget.skipped == 1
+
+
+def test_satellite_image_without_a_budget_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Callers that pass no budget keep the old unlimited behaviour."""
+    from app.services.l03_ingestion import gee
+
+    monkeypatch.setattr(gee, "truecolor_thumbnail", lambda *a, **k: b"PNG")
+    settings = Settings(
+        app_env="test", gee_enabled=True, gee_project="p", report_satellite_source="gee"
+    )
+    png, _ = job_report._satellite_image(
+        None, None, (73.7, 18.3, 73.8, 18.4), date(2026, 5, 3), None, settings
+    )
+    assert png == b"PNG"
+
+
+def test_budget_abandons_a_fetch_that_outruns_the_allowance() -> None:
+    """The real failure: one Earth Engine call blocking far past the allowance.
+
+    ee.data.setDeadline is process-global, so the bound has to be enforced by the
+    waiter. The slow call must not hold the report past the budget.
+    """
+    b = job_report._Budget(limit_s=0.5)
+    started = time.perf_counter()
+    with pytest.raises(TimeoutError):
+        b.run(lambda: time.sleep(30))
+    elapsed = time.perf_counter() - started
+    assert elapsed < 5  # abandoned, not waited out
+    assert b.spent() is True  # emptied, so no further day submits
+    b.close()
+
+
+def test_budget_run_returns_the_value_and_charges_the_time() -> None:
+    b = job_report._Budget(limit_s=10.0)
+    assert b.run(lambda: "png") == "png"
+    assert b.used_s > 0
+    assert b.spent() is False
+    b.close()
+
+
+def test_budget_run_propagates_the_callables_own_error() -> None:
+    b = job_report._Budget(limit_s=10.0)
+    with pytest.raises(ValueError, match="no pass"):
+        b.run(lambda: (_ for _ in ()).throw(ValueError("no pass that day")))
+    b.close()
+
+
+def test_unlimited_budget_runs_inline_without_a_pool() -> None:
+    b = job_report._Budget(limit_s=0.0)
+    assert b.run(lambda: "png") == "png"
+    assert b._pool is None
+    assert b.remaining() == math.inf

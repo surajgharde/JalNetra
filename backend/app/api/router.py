@@ -1,7 +1,16 @@
 from fastapi import APIRouter
 
 from app.api import tiles
-from app.api.v1 import alerts, health, imagery, jobs, methodology, validations, water_bodies
+from app.api.v1 import (
+    alerts,
+    health,
+    imagery,
+    jobs,
+    methodology,
+    validations,
+    water_bodies,
+    wishlist,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -15,3 +24,4 @@ v1_router.include_router(validations.router)
 v1_router.include_router(jobs.router)
 v1_router.include_router(imagery.router)
 v1_router.include_router(methodology.router)
+v1_router.include_router(wishlist.router)

@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { fmtDate, fmtKm2, fmtSigned, indicatorShortLabel, statusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/store/ui";
+import { FetchSatelliteButton } from "./FetchSatelliteButton";
 import { MapView } from "./MapView";
 
 /**
@@ -33,6 +34,23 @@ export function Overview() {
     }
     return best;
   }, [indicators.data]);
+
+  // No usable baseline yet (new water body) shouldn't mean a dead "Building"
+  // tile -- the current scene's own turbidity/chlorophyll reading is already
+  // computed, just not yet z-scored against history.
+  const buildingReading = useMemo(() => {
+    if (peak) return null;
+    const readings = indicators.data?.zones?.[0]?.indicators ?? [];
+    const ndti = readings.find((r) => r.key === "ndti_turbidity");
+    if (ndti?.value != null) {
+      return { text: `NDTI: ${ndti.value.toFixed(2)} (${ndti.value > 0.1 ? "Turbid" : "Clear"})` };
+    }
+    const ndci = readings.find((r) => r.key === "ndci_chlorophyll");
+    if (ndci?.value != null) {
+      return { text: `NDCI: ${ndci.value.toFixed(2)} (${ndci.value > 0.05 ? "High Algae" : "Normal"})` };
+    }
+    return null;
+  }, [peak, indicators.data]);
 
   const scene = indicators.data?.observed_on ?? null;
   const observation = useMemo(
@@ -63,6 +81,9 @@ export function Overview() {
         <span className="truncate text-muted-foreground">
           {wb ? `${wb.district} · ${fmtKm2(wb.area_km2)} · tier ${wb.tier}` : ""}
         </span>
+        {wb && waterBodyId && (
+          <FetchSatelliteButton waterBodyId={waterBodyId} lakeName={wb.name} className="h-6 shrink-0 px-2 py-0 text-[11px]" />
+        )}
         <span className="ml-auto shrink-0 text-muted-foreground">
           {scene ? `Scene ${fmtDate(scene)}` : "No scene yet"}
         </span>
@@ -101,8 +122,24 @@ export function Overview() {
               <StatTile
                 key="peak"
                 label="Strongest anomaly"
-                value={peak ? `${fmtSigned(peak.z)} z` : indicators.data?.scene_id ? "Building" : "—"}
-                sub={peak ? `${peak.label} · ${peak.zone}` : "No baseline on this scene yet"}
+                value={
+                  peak
+                    ? `${fmtSigned(peak.z)}σ`
+                    : buildingReading
+                      ? buildingReading.text
+                      : indicators.data?.scene_id
+                        ? "Building"
+                        : "No scenes yet"
+                }
+                sub={
+                  peak
+                    ? `${peak.label} · ${peak.zone}`
+                    : buildingReading
+                      ? "Current Sentinel-2 observation · Baseline in progress"
+                      : indicators.data?.scene_id
+                        ? "No baseline on this scene yet"
+                        : "Fetch satellite data above to begin monitoring"
+                }
                 tone={peakTone}
                 to="/indicators"
                 cta="Indicators"
@@ -110,8 +147,16 @@ export function Overview() {
               <StatTile
                 key="extent"
                 label="Water extent"
-                value={fmtKm2(observation?.water_extent_km2)}
-                sub={wb ? `Registered outline ${fmtKm2(wb.area_km2)}` : undefined}
+                value={observation?.water_extent_km2 != null ? fmtKm2(observation.water_extent_km2) : "No data yet"}
+                sub={
+                  wb
+                    ? observation?.water_extent_km2 != null
+                      ? `Registered outline ${fmtKm2(wb.area_km2)}${
+                          wb.area_km2 ? ` · ${((observation.water_extent_km2 / wb.area_km2) * 100).toFixed(0)}% full` : ""
+                        }`
+                      : `Registered outline ${fmtKm2(wb.area_km2)} · fetch satellite data to measure it`
+                    : undefined
+                }
                 tone="neutral"
                 to="/trends"
                 cta="Trends"
@@ -119,11 +164,11 @@ export function Overview() {
               <StatTile
                 key="scene"
                 label="Scene quality"
-                value={clearPct === null ? "—" : `${clearPct.toFixed(0)}% clear`}
+                value={clearPct === null ? "No data yet" : `${clearPct.toFixed(0)}% clear`}
                 sub={
                   observation
                     ? `${observation.cloud_pct.toFixed(0)}% cloud · ${observation.stage}`
-                    : "No usable observation"
+                    : "Fetch satellite data above to check scene quality"
                 }
                 tone={clearPct === null ? "neutral" : clearPct < 40 ? "warning" : "good"}
                 to="/trends"

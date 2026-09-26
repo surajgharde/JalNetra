@@ -24,7 +24,12 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import math
+import time
 from collections import defaultdict
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -339,6 +344,74 @@ def false_colour_png(bands: dict[str, np.ndarray], px: int) -> bytes:
     return buf.getvalue()
 
 
+class _Budget:
+    """One wall-clock allowance shared by every remote image fetch in a report.
+
+    Each report day wants its own Earth Engine thumbnail, and on a slow link a
+    serial run of those outlives any client's timeout -- which also meant the PDF
+    never finished, never got stored, and every retry started over. Days past the
+    allowance fall back to the locally cached bands instead.
+
+    The allowance has to be enforced here rather than by asking Earth Engine for a
+    shorter deadline: ``ee.data.setDeadline`` writes process-global state, so
+    lowering it for a report would also shorten every concurrent request. Instead
+    each fetch runs on a worker thread and is waited on for no longer than the
+    budget has left. A fetch that overruns is abandoned, not cancelled -- the
+    thread finishes on its own and its result is dropped -- and the budget is
+    emptied so nothing further is submitted.
+    """
+
+    def __init__(self, limit_s: float) -> None:
+        self.limit_s = limit_s
+        self.used_s = 0.0
+        self.skipped = 0
+        self._pool: ThreadPoolExecutor | None = None
+
+    @property
+    def unlimited(self) -> bool:
+        return self.limit_s <= 0
+
+    def remaining(self) -> float:
+        return math.inf if self.unlimited else max(0.0, self.limit_s - self.used_s)
+
+    def spent(self) -> bool:
+        if self.unlimited or self.used_s < self.limit_s:
+            return False
+        self.skipped += 1
+        return True
+
+    def charge(self, seconds: float) -> None:
+        self.used_s += seconds
+
+    def run(self, fn: Callable[[], Any]) -> Any:
+        """Call ``fn`` on a worker thread, waiting at most the remaining budget.
+
+        Raises :class:`TimeoutError` when the allowance runs out first, having
+        emptied the budget so the caller stops submitting.
+        """
+        if self.unlimited:
+            return fn()
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report-image")
+        started = time.perf_counter()
+        future = self._pool.submit(fn)
+        timed_out = False
+        try:
+            return future.result(timeout=self.remaining())
+        except FuturesTimeout as exc:
+            timed_out = True
+            raise TimeoutError("image fetch outran the report's budget") from exc
+        finally:
+            self.charge(time.perf_counter() - started)
+            if timed_out:  # abandoned at the limit: charge the wait, then stop submitting
+                self.used_s = max(self.used_s, self.limit_s)
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool = None
+
+
 def _satellite_image(
     store: ObjectStore,
     wb: WaterBody,
@@ -346,19 +419,32 @@ def _satellite_image(
     day: date,
     cache_key: str | None,
     settings: Settings,
+    budget: _Budget | None = None,
 ) -> tuple[bytes | None, str]:
     mode = settings.report_satellite_source
-    if mode in ("auto", "gee") and settings.gee_enabled:
+    spent = budget is not None and budget.spent()
+    if mode in ("auto", "gee") and settings.gee_enabled and not spent:
         from app.services.l03_ingestion import gee
 
+        def fetch() -> bytes | None:
+            return gee.truecolor_thumbnail(
+                bbox,
+                day,
+                px=settings.report_image_px,
+                settings=settings,
+                timeout_s=settings.report_thumbnail_timeout_s,
+            )
+
         try:
-            png = gee.truecolor_thumbnail(bbox, day, px=settings.report_image_px, settings=settings)
+            png = budget.run(fetch) if budget is not None else fetch()
             if png:
                 return png, "Sentinel-2 true colour (Earth Engine)"
         except Exception as exc:
             log.warning("report: gee thumbnail failed", extra={"day": str(day), "error": str(exc)})
         if mode == "gee":
             return None, "Sentinel-2 true colour unavailable"
+    if spent and mode == "gee":
+        return None, "Sentinel-2 true colour unavailable (image time budget spent)"
     if cache_key:
         try:
             wbands = load_bands(store, cache_key)
@@ -471,6 +557,7 @@ def collect_report_data(
     days: list[DayReport] = []
     ordered = sorted(per_day.items())
     image_days = {d for d, _ in ordered[-settings.report_max_day_pages :]}
+    budget = _Budget(settings.report_image_budget_s)
     for day, scene in ordered:
         mask = masks.get(scene.id)
         run = runs.get(scene.id)
@@ -527,7 +614,7 @@ def collect_report_data(
 
         if with_images and d.observed and day in image_days:
             d.satellite_png, d.satellite_label = _satellite_image(
-                store, wb, bbox, day, ingest_keys.get(scene.id), settings
+                store, wb, bbox, day, ingest_keys.get(scene.id), settings, budget
             )
             d.watermask = _watermask(store, mask.chip_key if mask else None)
             if run is not None and run.status == "done":
@@ -539,6 +626,18 @@ def collect_report_data(
                     if img is not None:
                         d.rasters[key] = img
         days.append(d)
+
+    budget.close()
+    if budget.skipped:
+        log.warning(
+            "report: satellite image budget spent; remaining days fell back to cached bands",
+            extra={
+                "job_id": job.id,
+                "budget_s": budget.limit_s,
+                "used_s": round(budget.used_s, 1),
+                "days_skipped": budget.skipped,
+            },
+        )
 
     return ReportData(
         job_id=job.id,

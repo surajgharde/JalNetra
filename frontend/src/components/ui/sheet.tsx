@@ -22,10 +22,13 @@ export function Sheet({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-900/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        {/* Leaflet's own panes and controls run up to z-index 1000, so this
+            drawer needs a comfortable margin above that or it renders behind
+            the map instead of over it. */}
+        <Dialog.Overlay className="fixed inset-0 z-[1999] bg-slate-900/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content
           className={cn(
-            "fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-card shadow-2xl data-[state=open]:animate-in data-[state=open]:slide-in-from-right",
+            "fixed inset-y-0 right-0 z-[2000] flex w-full max-w-2xl flex-col overflow-y-auto border-l bg-card shadow-2xl pointer-events-auto data-[state=open]:animate-in data-[state=open]:slide-in-from-right",
             className,
           )}
         >

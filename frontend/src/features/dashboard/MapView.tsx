@@ -10,6 +10,7 @@ import { RASTER_LAYERS, severityColor } from "@/lib/format";
 import { useUi } from "@/store/ui";
 import { LayerToggles } from "./LayerToggles";
 import { LiveImageryLayer } from "./LiveImagery";
+import { MapSearchOverlay, MapSearchWidget } from "./MapSearchWidget";
 
 const MAHARASHTRA_CENTER: [number, number] = [18.9, 75.5];
 
@@ -73,6 +74,10 @@ export function MapView() {
   const body = useWaterBody(waterBodyId);
   const alerts = useAlertsGeo({ status: "active" });
   const [layersOpen, setLayersOpen] = useState(false);
+  // Shared with the top bar's place autocomplete (WaterBodyBar) so either
+  // search box flies the map and shows the same discovered water bodies.
+  const searchResult = useUi((s) => s.search);
+  const setSearchResult = useUi((s) => s.setSearchResult);
 
   const boundary = useMemo<GJFeature<GJGeometry> | null>(
     () =>
@@ -96,7 +101,9 @@ export function MapView() {
           <GeoJSON
             key={`b-${body.data?.id}`}
             data={boundary}
-            style={{ color: "#0c4a6e", weight: 2, fillOpacity: 0.04 }}
+            // Outline only -- the satellite/basemap underneath is the point,
+            // not a solid tint covering the whole water body.
+            style={{ color: "#0284c7", weight: 2.5, fill: false, fillOpacity: 0 }}
           />
         )}
         {showZones && zones && (
@@ -107,7 +114,7 @@ export function MapView() {
               color: f?.properties?.id === zoneId ? "#0369a1" : "#64748b",
               weight: f?.properties?.id === zoneId ? 2.5 : 1,
               dashArray: "4 3",
-              fillOpacity: f?.properties?.id === zoneId ? 0.12 : 0.02,
+              fillOpacity: f?.properties?.id === zoneId ? 0.05 : 0,
             })}
             onEachFeature={(f, layer) => {
               const p = f.properties as { id: string; name: string; baseline_status: string; open_alert_id: string | null };
@@ -119,13 +126,17 @@ export function MapView() {
         {waterBodyId && date && (
           <RasterLayers waterBodyId={waterBodyId} date={date} bbox={body.data?.bbox} />
         )}
+        {searchResult && <MapSearchOverlay {...searchResult} />}
         {showAlerts && alerts.data && (
           <GeoJSON
             key={`a-${alerts.data.features.length}`}
             data={alerts.data as unknown as GJFeatureCollection}
             style={(f) => {
               const sev = (f?.properties?.severity ?? "low") as keyof typeof severityColor;
-              return { color: severityColor[sev], weight: 2, fillColor: severityColor[sev], fillOpacity: 0.25 };
+              // Outline only -- this layer spans every water body with an
+              // active alert on the whole map, so a solid fill (low severity
+              // is blue) reads as neighboring lakes being masked solid blue.
+              return { color: severityColor[sev], weight: 2, fill: false, fillOpacity: 0 };
             }}
             onEachFeature={(f, layer) => {
               const p = f.properties as {
@@ -146,6 +157,11 @@ export function MapView() {
           />
         )}
       </MapContainer>
+      <MapSearchWidget
+        onResult={setSearchResult}
+        onClear={() => setSearchResult(null)}
+        hasResult={!!searchResult}
+      />
       {/* Layers stay behind a button: the map is the point, not the controls. */}
       <div className="pointer-events-none absolute inset-y-3 right-3 z-[1000] flex flex-col items-end gap-2">
         <button

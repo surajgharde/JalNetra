@@ -147,7 +147,6 @@ def _put_photo(validation_id: int, data: bytes, content_type: str, filename: str
     return key
 
 
-@router.post("/validations/{validation_id}/photo", response_model=ValidationOut)
 async def _read_bounded(file: UploadFile, max_bytes: int) -> bytes:
     """Read the upload in chunks and stop as soon as it exceeds the limit, so an
     oversized body is never fully buffered in memory."""
@@ -164,6 +163,7 @@ async def _read_bounded(file: UploadFile, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+@router.post("/validations/{validation_id}/photo", response_model=ValidationOut)
 async def upload_photo(
     validation_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],

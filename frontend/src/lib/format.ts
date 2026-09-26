@@ -66,6 +66,15 @@ export const severityBg: Record<Severity, string> = {
   medium: "bg-amber-100 text-amber-800",
   high: "bg-red-100 text-red-800",
 };
+/** Status dot colour shared by the water-body bar, wishlist and recent-history rows. */
+export const STATUS_DOT: Record<"alert" | "watch" | "normal" | "baseline_building" | "no_data", string> = {
+  alert: "bg-red-500",
+  watch: "bg-amber-500",
+  normal: "bg-emerald-500",
+  baseline_building: "bg-slate-400",
+  no_data: "bg-slate-300",
+};
+
 export const statusLabel: Record<string, string> = {
   open: "Open",
   investigating: "Investigating",

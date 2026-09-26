@@ -96,16 +96,21 @@ async def _proxy(chip: str, z: int, x: int, y: int, settings: Settings) -> Respo
     )
 
 
-@router.get("/tiles/chip/{chip}/{z}/{x}/{y}.png", response_class=Response)
+# {chip:path}, not {chip}: a chip key always contains slashes ("chips/<wb>/<date>/..."),
+# and the server percent-decodes %2F before routing, so a plain path parameter -- which
+# never spans a slash -- matched no real key at all. Every alert's evidence tile URL
+# is built from this route, so they all 404'd.
+@router.get("/tiles/chip/{chip:path}/{z}/{x}/{y}.png", response_class=Response)
 @limiter.limit(get_settings().rate_limit_tiles)
 async def chip_tile(
     request: Request,
-    chip: Annotated[str, Path(description="URL-encoded MinIO object key of a COG chip")],
+    chip: Annotated[str, Path(description="MinIO object key of a COG chip (may be URL-encoded)")],
     z: int,
     x: int,
     y: int,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
+    chip = chip.strip("/")
     if not chip.startswith(("chips/", "composites/")) or ".." in chip:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "not a chip key")
     return await _proxy(chip, z, x, y, settings)

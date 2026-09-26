@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -12,6 +14,7 @@ from app.core.config import Settings
 from app.core.health import CHECKS
 from app.main import app
 from app.services.l02_api.jobs import STAGES, StageCount
+from app.services.l11_alerts.evidence import tile_url
 
 CONTRACT_PATHS = {
     "/api/v1/water-bodies": {"get"},
@@ -32,6 +35,7 @@ CONTRACT_PATHS = {
     "/api/v1/imagery/status": {"get"},
     "/api/v1/methodology": {"get"},
     "/tiles/{layer}/{water_body_id}/{on}/{z}/{x}/{y}.png": {"get"},
+    "/tiles/chip/{chip}/{z}/{x}/{y}.png": {"get"},
     "/health": {"get"},
 }
 
@@ -112,3 +116,70 @@ async def test_methodology_reads_from_the_registry(client) -> None:  # type: ign
     assert "Otsu" in " ".join(m["water_detection"]["details"])
     assert "laboratory" in m["product_boundary"] and m["disclaimer"]
     assert any("z_ndti_turbidity" in d for d in m["prioritisation"]["details"])
+
+
+# --- chip tile route -------------------------------------------------------------
+#
+# Every alert advertises its evidence overlays as /tiles/chip/<encoded key>/{z}/{x}/{y}.png
+# (see l11_alerts.evidence.TILE_TEMPLATE). A chip key always contains slashes and the
+# server percent-decodes %2F before routing, so a plain {chip} parameter -- which never
+# spans a slash -- matched no real key: every evidence tile 404'd.
+
+
+def test_chip_route_accepts_a_key_with_slashes() -> None:
+    """The route must reach the handler; the handler's own 400 proves it matched."""
+    key = quote("chips/wb_demo/2024-12-24/body/sediment_proxy.tif", safe="")
+    with TestClient(app) as client:
+        r = client.get(f"/tiles/chip/{key}/13/5773/3669.png")
+    assert r.status_code != 404, "route did not match a real chip key"
+
+
+def test_evidence_tile_url_matches_the_chip_route() -> None:
+    """The URL the alert payload hands the UI has to resolve to this route."""
+    url = tile_url("chips/wb_demo/2024-12-24/body/sediment_proxy.tif")
+    assert url is not None
+    concrete = url.replace("{z}", "13").replace("{x}", "5773").replace("{y}", "3669")
+    with TestClient(app) as client:
+        r = client.get(concrete)
+    assert r.status_code != 404, f"{concrete} does not resolve"
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "etc/passwd",
+        "chips/../../secret.tif",
+        "../../etc/passwd",
+        "secrets/key.tif",
+    ],
+)
+def test_chip_route_still_rejects_keys_outside_the_chip_prefixes(key: str) -> None:
+    """Widening the parameter must not widen what it will serve."""
+    with TestClient(app) as client:
+        r = client.get(f"/tiles/chip/{quote(key, safe='')}/13/5773/3669.png")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "not a chip key"
+
+
+# --- photo upload route ----------------------------------------------------------
+#
+# The @router.post decorator sat on the private _read_bounded helper instead of on
+# upload_photo, so the registered handler was the helper: its max_bytes argument
+# became a REQUIRED query parameter and every upload was rejected 422, while
+# upload_photo itself was never routed at all.
+
+PHOTO_PATH = "/api/v1/validations/{validation_id}/photo"
+
+
+def test_photo_upload_is_routed_to_the_real_handler() -> None:
+    op = app.openapi()["paths"][PHOTO_PATH]["post"]
+    assert op["operationId"].startswith("upload_photo"), op["operationId"]
+
+
+def test_photo_upload_takes_only_a_path_parameter_and_a_file() -> None:
+    """No internal size cap leaking out as a required query parameter."""
+    op = app.openapi()["paths"][PHOTO_PATH]["post"]
+    params = {(p["name"], p["in"]) for p in op.get("parameters", [])}
+    assert params == {("validation_id", "path")}, params
+    assert "max_bytes" not in {name for name, _ in params}
+    assert list(op["requestBody"]["content"]) == ["multipart/form-data"]

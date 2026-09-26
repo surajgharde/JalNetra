@@ -32,11 +32,20 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar
 
 import numpy as np
+import requests
 from affine import Affine
 from pyproj import CRS
 from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    Retrying,
+    retry,
+    retry_if_exception,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    wait_exponential_jitter,
+)
 
 from app.core.config import Settings, get_settings
 from app.services.l03_ingestion.reader import (
@@ -79,6 +88,79 @@ class GEEError(SourceError):
 _lock = threading.Lock()
 _initialised_for: str | None = None
 
+# Substrings that mark a failure as "the link dropped", not "the request was wrong".
+# Earth Engine's own errors arrive as EEException with the transport error stringified
+# inside them, so matching on text is the only way to tell the two apart.
+_TRANSIENT_MARKERS: tuple[str, ...] = (
+    "ssl",
+    "eof occurred",
+    "connection",
+    "connectionreset",
+    "broken pipe",
+    "timed out",
+    "timeout",
+    "max retries",
+    "remote end closed",
+    "temporarily unavailable",
+    "transport",
+    "502",
+    "503",
+    "504",
+)
+
+
+def _transient(exc: BaseException) -> bool:
+    """True when ``exc`` looks like a dropped connection rather than a rejected request.
+
+    ``requests``/``urllib3``/``ssl``/``socket`` errors all subclass :class:`OSError`, which
+    covers the common case; the text match catches wrapped ones (``EEException``,
+    ``google.auth`` transport errors) whose type says nothing useful.
+    """
+    if isinstance(exc, FileNotFoundError | PermissionError | IsADirectoryError):
+        return False  # OSError subclasses, but a bad key path is not a flaky link
+    if isinstance(exc, OSError):
+        return True
+    return any(m in f"{type(exc).__name__}: {exc}".lower() for m in _TRANSIENT_MARKERS)
+
+
+def _harden_session(settings: Settings) -> None:
+    """Give Earth Engine's ``requests`` session connect/read retries with backoff.
+
+    ``ee`` builds a bare :class:`requests.Session`, and ``requests`` ships with retries
+    off, so a single TLS EOF anywhere -- the OAuth token POST at startup, the hourly
+    token refresh, any ``getInfo``/``computePixels`` -- surfaces as a hard failure.
+    Mounting a retrying adapter makes those survive a flaky link. ``allowed_methods=None``
+    is deliberate: the token exchange is a POST, and retrying a dropped connection is
+    safe because the request never reached the server.
+    """
+    import ee
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    n = max(0, settings.gee_transport_retries)
+    if not n:
+        return
+    adapter = HTTPAdapter(
+        max_retries=Retry(
+            total=n,
+            connect=n,
+            read=n,
+            status=n,
+            backoff_factor=1.0,
+            status_forcelist=(408, 429, 500, 502, 503, 504),
+            allowed_methods=None,
+            raise_on_status=False,
+        )
+    )
+    try:
+        state = ee.data._get_state()  # private: ee exposes no hook for its session
+        if state.requests_session is None:
+            state.requests_session = requests.Session()
+        state.requests_session.mount("https://", adapter)
+        state.requests_session.mount("http://", adapter)
+    except Exception:  # pragma: no cover -- ee internals moved; retries below still apply
+        log.warning("could not attach retries to the earth engine session", exc_info=True)
+
 
 def _session_key(settings: Settings) -> str:
     return "|".join(
@@ -109,6 +191,28 @@ def credentials(settings: Settings) -> Any | None:
     return None
 
 
+def _ee_initialize(creds: Any | None, project: str | None, url: str | None) -> None:
+    """The one Earth Engine call that reaches the network during startup."""
+    import ee
+
+    if creds is None:
+        ee.Initialize(project=project, url=url)
+    else:
+        ee.Initialize(creds, project=project, url=url)
+
+
+def _deadline(ms: int) -> None:
+    import ee
+
+    ee.data.setDeadline(ms)
+
+
+def _high_volume_url() -> str:
+    import ee
+
+    return str(ee.data.HIGH_VOLUME_API_BASE_URL)
+
+
 def initialize(settings: Settings | None = None, *, force: bool = False) -> None:
     """Initialise the Earth Engine session once per process (thread-safe, idempotent)."""
     global _initialised_for
@@ -119,18 +223,40 @@ def initialize(settings: Settings | None = None, *, force: bool = False) -> None
     with _lock:
         if _initialised_for == key and not force:
             return
-        import ee
-
         creds = credentials(settings)
-        url = ee.data.HIGH_VOLUME_API_BASE_URL if settings.gee_high_volume else None
+        url = _high_volume_url() if settings.gee_high_volume else None
+        _harden_session(settings)
+
+        # The OAuth token exchange behind ee.Initialize is one POST to
+        # oauth2.googleapis.com, and on a lossy link it is dropped mid-handshake
+        # ("[SSL: UNEXPECTED_EOF_WHILE_READING]") often enough to fail startup outright.
+        # The adapter above retries inside a single call; this retries the call itself,
+        # which also covers the paths google-auth drives through a session of its own.
         try:
-            if creds is None:
-                ee.Initialize(project=settings.gee_project, url=url)
-            else:
-                ee.Initialize(creds, project=settings.gee_project, url=url)
+            for attempt in Retrying(
+                retry=retry_if_exception(_transient),
+                stop=stop_after_attempt(max(1, settings.gee_init_attempts)),
+                wait=wait_exponential_jitter(initial=1, max=30),
+                reraise=True,
+            ):
+                with attempt:
+                    n = attempt.retry_state.attempt_number
+                    if n > 1:
+                        log.warning(
+                            "earth engine initialise retry",
+                            extra={"attempt": n, "attempts": settings.gee_init_attempts},
+                        )
+                    _ee_initialize(creds, settings.gee_project, url)
         except Exception as exc:
-            raise GEEError(f"gee: initialise failed: {exc}") from exc
-        ee.data.setDeadline(int(settings.gee_timeout_s * 1000))
+            hint = (
+                " (the link to oauth2.googleapis.com keeps dropping -- check the network,"
+                " VPN or proxy; GEE_INIT_ATTEMPTS raises the number of tries)"
+                if _transient(exc)
+                else ""
+            )
+            raise GEEError(f"gee: initialise failed: {exc}{hint}") from exc
+        _deadline(int(settings.gee_timeout_s * 1000))
+        _harden_session(settings)  # ee.Initialize may have swapped the session
         _initialised_for = key
         log.info(
             "earth engine session ready",
@@ -147,14 +273,32 @@ def configured(settings: Settings | None = None) -> bool:
     return bool(settings.gee_enabled and settings.gee_project)
 
 
-def ping(settings: Settings | None = None) -> None:
-    """One trivial server round trip; raises :class:`GEEError` when the session is unusable."""
-    settings = settings or get_settings()
-    initialize(settings)
+def _ee_ping() -> None:
+    """The one trivial round trip /health makes to Earth Engine."""
     import ee
 
+    ee.Number(1).getInfo()
+
+
+def ping(settings: Settings | None = None) -> None:
+    """One trivial server round trip; raises :class:`GEEError` when the session is unusable.
+
+    Retried like ``initialize``: this probe decides what /health reports, and on a
+    lossy link a single dropped connection was enough to mark Earth Engine -- and so
+    the whole API -- degraded while the session was in fact perfectly usable.
+    """
+    settings = settings or get_settings()
+    initialize(settings)
+
     try:
-        ee.Number(1).getInfo()
+        for attempt in Retrying(
+            retry=retry_if_exception(_transient),
+            stop=stop_after_attempt(max(1, settings.gee_ping_attempts)),
+            wait=wait_exponential_jitter(initial=0.5, max=2),
+            reraise=True,
+        ):
+            with attempt:
+                _ee_ping()
     except Exception as exc:
         raise GEEError(f"gee: ping failed: {exc}") from exc
 
@@ -639,9 +783,14 @@ def truecolor_thumbnail(
     *,
     px: int = 640,
     settings: Settings | None = None,
+    timeout_s: float | None = None,
 ) -> bytes | None:
     """PNG of the true-colour Sentinel-2 mosaic over ``bbox`` on ``day`` (all tiles
-    of that pass, unmasked), or ``None`` when no pass exists. For reports."""
+    of that pass, unmasked), or ``None`` when no pass exists. For reports.
+
+    ``timeout_s`` caps the PNG fetch; callers rendering many days in one request
+    pass something well under ``gee_timeout_s``, which is sized for pixel reads.
+    """
     settings = settings or get_settings()
     initialize(settings)
     import ee
@@ -658,7 +807,7 @@ def truecolor_thumbnail(
             return None
         styled = _styled(coll.mosaic(), LIVE_VIS["truecolor"])
         url = styled.getThumbURL({"region": region, "dimensions": px, "format": "png"})
-        r = httpx.get(url, timeout=settings.gee_timeout_s, follow_redirects=True)
+        r = httpx.get(url, timeout=timeout_s or settings.gee_timeout_s, follow_redirects=True)
         r.raise_for_status()
         return bytes(r.content)
     except Exception as exc:

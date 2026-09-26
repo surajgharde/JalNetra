@@ -129,6 +129,106 @@ def test_initialize_refuses_when_disabled() -> None:
         gee.initialize(Settings(app_env="test", gee_enabled=False))
 
 
+# --- initialise retries ----------------------------------------------------------
+#
+# The OAuth token POST behind ee.Initialize is dropped mid-handshake on a lossy link
+# ("[SSL: UNEXPECTED_EOF_WHILE_READING]"), which used to fail startup on the first try.
+
+
+def _init_settings(**kw: Any) -> Settings:
+    return Settings(app_env="test", gee_enabled=True, gee_project="p", gee_high_volume=False, **kw)
+
+
+@pytest.fixture
+def stub_ee(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Neutralise the pieces of ``initialize`` that need a real session."""
+    monkeypatch.setattr(gee, "_initialised_for", None, raising=False)
+    monkeypatch.setattr(gee, "credentials", lambda settings: None)
+    monkeypatch.setattr(gee, "_harden_session", lambda settings: None)
+    calls: list[str] = []
+    monkeypatch.setattr(gee, "_deadline", lambda ms: calls.append(f"deadline:{ms}"))
+    return calls
+
+
+def _ssl_eof() -> OSError:
+    """The exact shape of the reported failure."""
+    import ssl
+
+    import requests
+
+    return requests.exceptions.SSLError(
+        "HTTPSConnectionPool(host='oauth2.googleapis.com', port=443): Max retries exceeded "
+        "with url: /token (Caused by SSLError(ssl.SSLEOFError(8, '[SSL: "
+        "UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))",
+        ssl.SSLEOFError(8, "EOF occurred in violation of protocol"),
+    )
+
+
+def test_initialize_retries_a_dropped_token_handshake(
+    monkeypatch: pytest.MonkeyPatch, stub_ee: list[str]
+) -> None:
+    attempts = {"n": 0}
+
+    def flaky(*args: Any, **kwargs: Any) -> None:
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise _ssl_eof()
+
+    monkeypatch.setattr(gee, "_ee_initialize", flaky)
+    monkeypatch.setattr(gee, "wait_exponential_jitter", lambda **kw: lambda rs: 0)
+    gee.initialize(_init_settings(gee_init_attempts=5), force=True)
+    assert attempts["n"] == 3  # two drops survived, third call won
+
+
+def test_initialize_gives_up_after_the_configured_attempts(
+    monkeypatch: pytest.MonkeyPatch, stub_ee: list[str]
+) -> None:
+    attempts = {"n": 0}
+
+    def always_drops(*args: Any, **kwargs: Any) -> None:
+        attempts["n"] += 1
+        raise _ssl_eof()
+
+    monkeypatch.setattr(gee, "_ee_initialize", always_drops)
+    monkeypatch.setattr(gee, "wait_exponential_jitter", lambda **kw: lambda rs: 0)
+    with pytest.raises(gee.GEEError) as err:
+        gee.initialize(_init_settings(gee_init_attempts=3), force=True)
+    assert attempts["n"] == 3
+    assert "oauth2.googleapis.com keeps dropping" in str(err.value)  # actionable hint
+
+
+def test_initialize_does_not_retry_a_real_rejection(
+    monkeypatch: pytest.MonkeyPatch, stub_ee: list[str]
+) -> None:
+    """A bad project or revoked key must fail fast, not burn five slow attempts."""
+    attempts = {"n": 0}
+
+    def rejected(*args: Any, **kwargs: Any) -> None:
+        attempts["n"] += 1
+        raise ValueError("Caller does not have permission on project 'p'")
+
+    monkeypatch.setattr(gee, "_ee_initialize", rejected)
+    with pytest.raises(gee.GEEError) as err:
+        gee.initialize(_init_settings(gee_init_attempts=5), force=True)
+    assert attempts["n"] == 1
+    assert "keeps dropping" not in str(err.value)
+
+
+@pytest.mark.parametrize(
+    ("exc", "transient"),
+    [
+        (_ssl_eof(), True),
+        (ConnectionResetError("connection reset by peer"), True),
+        (TimeoutError("timed out"), True),
+        (RuntimeError("503 Service Unavailable"), True),
+        (RuntimeError("Not signed up for Earth Engine"), False),
+        (ValueError("unknown visualisation"), False),
+    ],
+)
+def test_transient_tells_dropped_links_from_rejections(exc: Exception, transient: bool) -> None:
+    assert gee._transient(exc) is transient
+
+
 def test_build_source_chains_gee_only_when_enabled() -> None:
     plain = build_source(Settings(app_env="test", gee_enabled=False))
     assert isinstance(plain, ChainedSource)
@@ -243,3 +343,61 @@ async def test_health_adds_gee_probe_only_when_enabled(monkeypatch: pytest.Monke
     on = await run_health_checks(Settings(app_env="test", gee_enabled=True, gee_project="p"))
     assert set(on) == {"postgres", "gee"}
     assert on["gee"].status == "error"  # no credentials on the test box
+
+
+# --- the /health probe -----------------------------------------------------------
+#
+# ping() decides what /health reports for Earth Engine. Its round trip had no retry,
+# so one dropped connection on a lossy link marked gee -- and with it the whole API --
+# degraded while the session was perfectly usable.
+
+
+def test_ping_retries_a_dropped_round_trip(
+    monkeypatch: pytest.MonkeyPatch, stub_ee: list[str]
+) -> None:
+    monkeypatch.setattr(gee, "initialize", lambda settings: None)
+    monkeypatch.setattr(gee, "wait_exponential_jitter", lambda **kw: lambda rs: 0)
+    attempts = {"n": 0}
+
+    def flaky() -> None:
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise _ssl_eof()
+
+    monkeypatch.setattr(gee, "_ee_ping", flaky)
+    gee.ping(_init_settings(gee_ping_attempts=3))
+    assert attempts["n"] == 3
+
+
+def test_ping_reports_a_link_that_never_comes_back(
+    monkeypatch: pytest.MonkeyPatch, stub_ee: list[str]
+) -> None:
+    monkeypatch.setattr(gee, "initialize", lambda settings: None)
+    monkeypatch.setattr(gee, "wait_exponential_jitter", lambda **kw: lambda rs: 0)
+    attempts = {"n": 0}
+
+    def always_drops() -> None:
+        attempts["n"] += 1
+        raise _ssl_eof()
+
+    monkeypatch.setattr(gee, "_ee_ping", always_drops)
+    with pytest.raises(gee.GEEError, match="ping failed"):
+        gee.ping(_init_settings(gee_ping_attempts=3))
+    assert attempts["n"] == 3
+
+
+def test_ping_does_not_retry_a_real_rejection(
+    monkeypatch: pytest.MonkeyPatch, stub_ee: list[str]
+) -> None:
+    """A revoked key or unregistered project must surface at once, not after N waits."""
+    monkeypatch.setattr(gee, "initialize", lambda settings: None)
+    attempts = {"n": 0}
+
+    def rejected() -> None:
+        attempts["n"] += 1
+        raise ValueError("Not signed up for Earth Engine")
+
+    monkeypatch.setattr(gee, "_ee_ping", rejected)
+    with pytest.raises(gee.GEEError):
+        gee.ping(_init_settings(gee_ping_attempts=5))
+    assert attempts["n"] == 1

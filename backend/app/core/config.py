@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     gee_collection: str = "COPERNICUS/S2_SR_HARMONIZED"  # BOA offset already removed
     gee_block_px: int = 1024  # computePixels block edge; 6 uint16 bands stay under the 48 MB cap
     gee_timeout_s: float = 120.0
+    gee_init_attempts: int = 5  # ee.Initialize tries: the OAuth token POST drops on flaky links
+    gee_ping_attempts: int = 3  # /health probe tries; keep the total under health_remote_timeout_s
+    gee_transport_retries: int = 4  # per-request connect/read retries in the Earth Engine session
     gee_map_ttl_s: int = 3600  # Redis TTL for live map ids (Earth Engine expires them after hours)
     gee_live_max_days: int = 120  # widest lookback a live imagery request may ask for
     gee_live_max_bbox_deg: float = 8.0  # widest bbox edge (Maharashtra is ~7 x 6 degrees)
@@ -158,6 +161,12 @@ class Settings(BaseSettings):
     report_prefix: str = "reports"  # MinIO key prefix for finished pipeline-run reports
     report_max_day_pages: int = 60  # per-day pages in a run report (most recent first)
     report_image_px: int = 640  # longest edge of each satellite image in the report
+    # A report can span report_max_day_pages days, each wanting one Earth Engine
+    # thumbnail. Serial remote fetches on a slow link would run past any client's
+    # patience, so image fetching gets one shared wall-clock budget per report:
+    # days past it fall back to cached bands, and the PDF still renders.
+    report_image_budget_s: float = 90.0
+    report_thumbnail_timeout_s: float = 20.0  # one thumbnail; well under gee_timeout_s
     report_satellite_source: Literal["auto", "gee", "cache"] = (
         "auto"  # per-day image: Earth Engine true colour, or false colour from cached bands
     )
@@ -210,7 +219,24 @@ class Settings(BaseSettings):
     ingest_lookback_days_tier3: int = 10
 
     # --- Health ---
-    health_check_timeout_s: float = 3.0
+    health_check_timeout_s: float = 3.0  # local deps (postgres, redis, minio)
+    # The STAC and Earth Engine probes cross the internet, where a TLS handshake
+    # alone can outlast the local ceiling. Holding them to it made /health report
+    # 503 degraded while every dependency was in fact answering.
+    health_remote_timeout_s: float = 20.0
+
+    # --- Geographic search & discovery (S14) ---
+    # Nominatim's usage policy caps free use at ~1 request/second and requires a
+    # descriptive User-Agent; Overpass has no hard cap but is a shared community
+    # server that throttles heavy callers. Both results are cached in Redis so a
+    # repeat search (or two users typing the same city) costs one upstream call.
+    nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    discovery_cache_ttl_s: int = 86400  # a city's coordinates don't move; cache a day
+    discovery_min_radius_km: float = 1.0
+    discovery_max_radius_km: float = 50.0
+    discovery_default_radius_km: float = 15.0
+    discovery_max_results: int = 200  # guard against a huge city returning thousands of ponds
+    discovery_http_timeout_s: float = 20.0
 
     @field_validator("log_level")
     @classmethod

@@ -34,6 +34,26 @@ async def _close_cached_redis() -> AsyncIterator[None]:
     await close_redis()
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_cached_engine(request: pytest.FixtureRequest) -> AsyncIterator[None]:
+    """Same problem as the Redis client, for the async database engine.
+
+    ``get_engine`` is lru_cached, so its asyncpg pool is reused across tests
+    while each test runs on a fresh event loop. The second test to reach the
+    database through the API then finds pooled connections bound to a closed
+    loop and fails in `'NoneType' object has no attribute 'send'`.
+
+    Only integration tests get a fresh pool. Disposing after every test instead
+    builds and tears down a pool ~230 times in one run, and the suite then dies
+    of MemoryError in the matplotlib brief tests long before it finishes."""
+    yield
+    if "integration" not in request.keywords:
+        return
+    from app.db.session import dispose_engine
+
+    await dispose_engine()
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Settings(app_env="test")
