@@ -206,6 +206,55 @@ async def update_status(
     return alert_out(alert, wb, zone)
 
 
+@router.post("/alerts/test-telegram")
+async def test_telegram(
+    chat_id: Annotated[str, Query(description="Telegram chat id to send the test alert to")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    _actor: ActorDep,
+) -> dict[str, str]:
+    """One-click check that a Telegram chat id actually receives push alerts,
+    before it's added to the ``recipients`` table: sends the most recent
+    alert (or a synthetic sample when none exist yet) as a real alert card.
+    Requires ``X-API-Key``."""
+    if not settings.telegram_bot_token:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Telegram not configured (TELEGRAM_BOT_TOKEN)"
+        )
+    from app.telegram.alerts import alert_data_from_payload, send_telegram_alert
+
+    row = (
+        await session.execute(
+            select(Alert, WaterBody, Zone)
+            .join(WaterBody, WaterBody.id == Alert.water_body_id)
+            .join(Zone, Zone.id == Alert.zone_id)
+            .order_by(Alert.last_observed_at.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is not None:
+        alert_data = alert_data_from_payload(
+            alert_out(row[0], row[1], row[2]), dashboard_base_url=settings.dashboard_base_url
+        )
+    else:
+        alert_data = {
+            "water_body_id": "wb_sample",
+            "water_body_name": "Sample Reservoir",
+            "zone_name": "Sample zone",
+            "observed_on": "2026-01-01",
+            "indicator": "Turbidity",
+            "z_score_str": "+4.2σ",
+            "severity": "high",
+            "priority_score": 72.0,
+            "dashboard_url": f"{settings.dashboard_base_url.rstrip('/')}/?wb=wb_sample",
+        }
+    try:
+        detail = await send_telegram_alert(settings.telegram_bot_token, chat_id, alert_data)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"could not send: {exc}") from exc
+    return {"status": "sent", "detail": detail, "chat_id": chat_id}
+
+
 @router.get("/alerts/{alert_id}/webhook-preview")
 async def webhook_preview(
     alert_id: str,

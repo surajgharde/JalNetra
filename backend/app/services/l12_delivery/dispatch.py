@@ -156,6 +156,19 @@ def render_email(payload: AlertOut, *, settings: Settings) -> tuple[str, str]:
     return subject, html
 
 
+def send_telegram(recipient: Recipient, payload: AlertOut, *, settings: Settings) -> str:
+    if not settings.telegram_bot_token:
+        raise ValueError("Telegram not configured (TELEGRAM_BOT_TOKEN)")
+    from app.telegram.alerts import alert_data_from_payload, send_telegram_alert_sync
+
+    alert_data = alert_data_from_payload(payload, dashboard_base_url=settings.dashboard_base_url)
+    brief_url = f"{settings.public_base_url.rstrip('/')}{alert_data['brief_url']}"
+    try:
+        return send_telegram_alert_sync(settings.telegram_bot_token, recipient.target, alert_data, brief_url)
+    except Exception as exc:
+        raise DeliveryError(f"telegram {recipient.target}: {exc}") from exc
+
+
 def send_email(recipient: Recipient, payload: AlertOut, *, settings: Settings) -> str:
     if not settings.smtp_host:
         raise ValueError("SMTP not configured (SMTP_HOST)")
@@ -233,11 +246,12 @@ def dispatch_alert(
             result.skipped.append(r.id)
             continue
         try:
-            detail = (
-                send_webhook(r, payload, settings=settings)
-                if r.channel == "webhook"
-                else send_email(r, payload, settings=settings)
-            )
+            if r.channel == "webhook":
+                detail = send_webhook(r, payload, settings=settings)
+            elif r.channel == "telegram":
+                detail = send_telegram(r, payload, settings=settings)
+            else:
+                detail = send_email(r, payload, settings=settings)
             _log(session, alert, r, reason, "sent", detail)
             result.sent.append(r.id)
         except DeliveryError as exc:

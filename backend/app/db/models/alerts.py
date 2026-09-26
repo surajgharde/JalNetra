@@ -105,8 +105,8 @@ class Recipient(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)  # "MPCB Pune regional office"
-    channel: Mapped[str] = mapped_column(Text, nullable=False)  # webhook | email
-    target: Mapped[str] = mapped_column(Text, nullable=False)  # URL or e-mail address
+    channel: Mapped[str] = mapped_column(Text, nullable=False)  # webhook | email | telegram
+    target: Mapped[str] = mapped_column(Text, nullable=False)  # URL, e-mail address, or Telegram chat id
     secret: Mapped[str | None] = mapped_column(Text)  # webhook HMAC key
     min_severity: Mapped[str] = mapped_column(Text, nullable=False, default="medium")
     # Jurisdiction: any of these matches; none set = statewide.

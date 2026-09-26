@@ -179,6 +179,9 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str = "jalnetra@localhost"
     smtp_starttls: bool = True
+    # --- Telegram push (Phase 2, L2): a "telegram" recipient channel, target = chat id ---
+    telegram_bot_token: str | None = None
+    dashboard_base_url: str = "http://localhost:5173"  # the frontend SPA, not the API
 
     # --- API (L2) ---
     # Write endpoints require one of these keys in X-API-Key; the value is the

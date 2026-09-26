@@ -242,10 +242,7 @@ export function WaterBodyBar() {
       )}
 
       <div className="relative min-w-0 flex-1">
-        <div
-          ref={stripRef}
-          className="flex items-center gap-2 overflow-x-auto py-0.5"
-        >
+        <div ref={stripRef} className="flex items-center gap-2 overflow-x-auto py-0.5">
           {isLoading &&
             [0, 1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-10 w-44 shrink-0 rounded-md" />
@@ -264,32 +261,19 @@ export function WaterBodyBar() {
               title={`${wb.name} · ${wb.district} · ${fmtKm2(wb.area_km2)} · tier ${wb.tier} · ${statusLabel[wb.status]}`}
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
-                selected === wb.id
-                  ? "border-primary bg-accent"
-                  : "hover:bg-accent/60",
+                selected === wb.id ? "border-primary bg-accent" : "hover:bg-accent/60",
               )}
             >
-              <span
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  STATUS_DOT[wb.status],
-                )}
-              />
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[wb.status])} />
               <span className="leading-tight">
-                <span className="block whitespace-nowrap text-xs font-medium">
-                  {wb.name}
-                </span>
+                <span className="block whitespace-nowrap text-xs font-medium">{wb.name}</span>
                 <span className="block whitespace-nowrap text-[10px] text-muted-foreground">
                   {wb.district} · {fmtKm2(wb.area_km2)}
-                  {wb.latest_observation &&
-                    ` · ${fmtDateShort(wb.latest_observation.observed_on)}`}
+                  {wb.latest_observation && ` · ${fmtDateShort(wb.latest_observation.observed_on)}`}
                 </span>
               </span>
               {wb.open_alerts > 0 && wb.max_open_severity && (
-                <Badge
-                  className={cn("shrink-0", severityBg[wb.max_open_severity])}
-                  title={`${wb.open_alerts} open`}
-                >
+                <Badge className={cn("shrink-0", severityBg[wb.max_open_severity])} title={`${wb.open_alerts} open`}>
                   {wb.open_alerts}
                 </Badge>
               )}
@@ -303,7 +287,9 @@ export function WaterBodyBar() {
         <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-card to-transparent" />
       </div>
 
-      <div className="shrink-0 border-l pl-3">
+      {/* Pinned to the far right corner of the same row -- never wraps to a
+       * second line; the strip above shrinks to make room instead. */}
+      <div className="ml-auto shrink-0 border-l pl-3">
         <PipelineRunner />
       </div>
     </div>

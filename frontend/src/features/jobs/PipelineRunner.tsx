@@ -33,12 +33,38 @@ export function PipelineRunner() {
   }
 
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="rounded border bg-card px-1 py-0.5" />
-      <span className="text-muted-foreground">→</span>
-      <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="rounded border bg-card px-1 py-0.5" />
+    <div className="flex flex-nowrap items-center gap-3 text-xs">
+      {/* One below the other rather than side by side with an arrow: half
+       * the horizontal footprint, so the water-body strip keeps its room. */}
+      <div className="flex shrink-0 flex-col gap-1">
+        <label className="flex items-center gap-1.5">
+          <span className="w-7 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            From
+          </span>
+          <input
+            type="date"
+            value={from}
+            max={to}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-6 w-[9.5rem] rounded border bg-card px-1.5 text-[11px]"
+          />
+        </label>
+        <label className="flex items-center gap-1.5">
+          <span className="w-7 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            To
+          </span>
+          <input
+            type="date"
+            value={to}
+            min={from}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-6 w-[9.5rem] rounded border bg-card px-1.5 text-[11px]"
+          />
+        </label>
+      </div>
       <Button
         size="sm"
+        className="shrink-0"
         disabled={!waterBodyId || start.isPending}
         onClick={() =>
           waterBodyId &&
@@ -51,7 +77,7 @@ export function PipelineRunner() {
       >
         <Play className="h-3.5 w-3.5" /> Run pipeline
       </Button>
-      {start.error && <span className="text-destructive">{start.error.message}</span>}
+      {start.error && <span className="shrink-0 text-destructive">{start.error.message}</span>}
       {job.data && <JobReadout job={job.data} onDismiss={() => watchJob(null)} />}
     </div>
   );
@@ -66,22 +92,22 @@ function JobReadout({
 }) {
   const running = job.status === "queued" || job.status === "running";
   return (
-    <div className="flex items-center gap-2 rounded-md border bg-card px-2 py-1">
-      {running && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
-      {job.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
-      {job.status === "failed" && <XCircle className="h-3.5 w-3.5 text-destructive" />}
-      <div className="w-40">
-        <div className="flex justify-between">
-          <span className="font-medium">
+    <div className="flex shrink-0 items-center gap-2.5 rounded-md border bg-card px-2.5 py-1.5">
+      {running && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
+      {job.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+      {job.status === "failed" && <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />}
+      <div className="w-44 shrink-0">
+        <div className="flex justify-between gap-2">
+          <span className="truncate font-medium">
             {job.status === "done"
               ? `Done · ${job.scenes_usable} scene${job.scenes_usable === 1 ? "" : "s"}`
               : job.status === "failed"
                 ? "Failed"
                 : (STAGE_LABELS[job.current_stage ?? ""] ?? job.current_stage ?? "Queued")}
           </span>
-          <span className="font-mono text-muted-foreground">{Math.round(job.progress_pct)}%</span>
+          <span className="shrink-0 font-mono text-muted-foreground">{Math.round(job.progress_pct)}%</span>
         </div>
-        <div className="mt-0.5 flex gap-0.5">
+        <div className="mt-1 flex gap-0.5">
           {job.stages.map((s) => (
             <div key={s.stage} className="h-1.5 flex-1 overflow-hidden rounded-sm bg-muted" title={`${STAGE_LABELS[s.stage] ?? s.stage}: ${s.done}/${s.total}`}>
               <div
@@ -93,17 +119,21 @@ function JobReadout({
         </div>
       </div>
       {job.alerts_created > 0 && (
-        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
+        <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
           {job.alerts_created} alert{job.alerts_created === 1 ? "" : "s"}
         </span>
       )}
-      {job.error && <span className="max-w-[12rem] truncate text-destructive" title={job.error}>{job.error}</span>}
+      {job.error && (
+        <span className="max-w-[12rem] shrink-0 truncate text-destructive" title={job.error}>
+          {job.error}
+        </span>
+      )}
       {job.scenes_found > 0 && (
-        <span className="flex items-center gap-1 border-l pl-2">
+        <span className="flex shrink-0 items-center gap-1.5 border-l pl-2.5">
           <a
             href={api.jobs.reportUrl(job.job_id, "pdf")}
             download
-            className="flex items-center gap-1 rounded border px-1.5 py-0.5 hover:bg-muted"
+            className="flex h-7 items-center gap-1 rounded border px-2 hover:bg-muted"
             title={
               running
                 ? "Report of what has been processed so far (re-download when the run finishes)"
@@ -115,7 +145,7 @@ function JobReadout({
           <a
             href={api.jobs.reportUrl(job.job_id, "csv")}
             download
-            className="flex items-center gap-1 rounded border px-1.5 py-0.5 hover:bg-muted"
+            className="flex h-7 items-center gap-1 rounded border px-2 hover:bg-muted"
             title="CSV: one row per day and zone with every indicator, z-score, priority and alert id"
           >
             <Table2 className="h-3.5 w-3.5" /> CSV
@@ -123,7 +153,11 @@ function JobReadout({
         </span>
       )}
       {!running && (
-        <button className="text-muted-foreground hover:text-foreground" onClick={onDismiss} aria-label="Dismiss">
+        <button
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+        >
           ×
         </button>
       )}
