@@ -36,6 +36,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "prometheus-client>=0.20",
     "earthengine-api>=1.5",
+    "python-telegram-bot>=22.8",
+    "openai>=3.19.2",
 ]
 
 [project.optional-dependencies]
