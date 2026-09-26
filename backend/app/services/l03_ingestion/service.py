@@ -176,8 +176,14 @@ def ingest_water_body(
     date_to: date | None = None,
     source: STACSource | None = None,
     settings: Settings | None = None,
+    max_usable_scenes: int | None = None,
 ) -> IngestResult:
-    """Search [day, date_to or day] and ingest every usable scene not yet cached."""
+    """Search [day, date_to or day] and ingest every usable scene not yet cached.
+
+    ``max_usable_scenes`` stops once that many usable scenes have been handled
+    (ingested or already-cached) -- a quick-look fetch that wants the latest
+    pass without waiting on the rest of the window. Left ``None`` (every other
+    caller), the whole window is processed, unchanged."""
     settings = settings or get_settings()
     source = source or build_source(settings)
     result = IngestResult(water_body_id=water_body_id)
@@ -186,7 +192,11 @@ def ingest_water_body(
         session, water_body_id, day, date_to or day, source=source, settings=settings
     )
     result.scenes_found = len(scenes)
-    for scene in scenes:
+    # A quick-look fetch wants the latest usable pass, not the oldest one in
+    # the window -- `scenes` is chronological ascending, so walk it backwards
+    # only in that mode; every other caller keeps the original order.
+    ordered_scenes = reversed(scenes) if max_usable_scenes is not None else scenes
+    for scene in ordered_scenes:
         if not scene.usable:
             result.unusable.append(scene.id)
             metrics.scenes_rejected_cloud.labels(stage="stac").inc()
@@ -196,12 +206,24 @@ def ingest_water_body(
                 session, store, wb, scene, gdal_env=source.gdal_env(), settings=settings
             )
         except Exception:
+            # A bad scene (e.g. a band COG genuinely missing from the STAC
+            # source -- an upstream data gap, not a transient blip) must not
+            # abort the whole window: re-raising here used to hand this to
+            # Celery's autoretry, which retries the ENTIRE task and hits the
+            # exact same permanently-missing file every time, burning 5
+            # doomed retries before failing the job outright. Record it
+            # (ingest_scene already persisted the failed SceneIngestion row)
+            # and move on, same as an over-threshold `unusable` scene -- so a
+            # quick-fetch whose newest scene is broken still falls through to
+            # the next-most-recent one in its window instead of hard-failing.
             result.failed.append(scene.id)
             log.exception("scene ingest failed", extra={"scene_id": scene.id})
-            raise
+            continue
         (result.ingested if did_work else result.skipped).append(scene.id)
         if did_work:
             metrics.scenes_ingested.labels(source=scene.source).inc()
+        if max_usable_scenes is not None and len(result.ingested) + len(result.skipped) >= max_usable_scenes:
+            break
     return result
 
 

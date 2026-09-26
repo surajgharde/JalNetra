@@ -121,19 +121,31 @@ def _count(session: Session, col: Any, *where: Any) -> int:
     return int(session.execute(select(func.count(func.distinct(col))).where(*where)).scalar_one())
 
 
-def stage_counts(session: Session, job: Job) -> tuple[list[StageCount], int, int, int]:
-    """Per-stage (done, total) plus scenes_found, scenes_usable, alerts_created."""
+def stage_counts(session: Session, job: Job) -> tuple[list[StageCount], int, int, int, int]:
+    """Per-stage (done, total) plus scenes_found, scenes_usable, alerts_created,
+    and how many of those usable scenes permanently failed to ingest."""
     all_ids, usable = _scene_ids(session, job)
     n = len(usable)
     wb = job.water_body_id
     if not usable:
-        return [StageCount(s, 0, 0) for s in STAGES], len(all_ids), 0, 0
+        return [StageCount(s, 0, 0) for s in STAGES], len(all_ids), 0, 0, 0
     ingested = _count(
         session,
         SceneIngestion.scene_id,
         SceneIngestion.water_body_id == wb,
         SceneIngestion.scene_id.in_(usable),
         SceneIngestion.status == "done",
+    )
+    # A scene whose raw read failed (e.g. a band COG genuinely missing at the
+    # source) never reaches masking -- like `mask_unusable` below, it counts
+    # as finished for every later stage instead of leaving the job stuck at
+    # this percent forever.
+    ingest_failed = _count(
+        session,
+        SceneIngestion.scene_id,
+        SceneIngestion.water_body_id == wb,
+        SceneIngestion.scene_id.in_(usable),
+        SceneIngestion.status == "failed",
     )
     masked = _count(
         session,
@@ -188,13 +200,13 @@ def stage_counts(session: Session, job: Job) -> tuple[list[StageCount], int, int
         Alert.first_observed_at < end,
     )
     counts = [
-        StageCount("ingestion", min(ingested, n), n),
-        StageCount("mask", min(masked, n), n),
-        StageCount("indicators", min(indicators + mask_unusable, n), n),
-        StageCount("anomalies", min(anomalies + mask_unusable, n), n),
-        StageCount("scoring", min(scored + skipped_anom + mask_unusable, n), n),
+        StageCount("ingestion", min(ingested + ingest_failed, n), n),
+        StageCount("mask", min(masked + ingest_failed, n), n),
+        StageCount("indicators", min(indicators + mask_unusable + ingest_failed, n), n),
+        StageCount("anomalies", min(anomalies + mask_unusable + ingest_failed, n), n),
+        StageCount("scoring", min(scored + skipped_anom + mask_unusable + ingest_failed, n), n),
     ]
-    return counts, len(all_ids), n, alerts
+    return counts, len(all_ids), n, alerts, ingest_failed
 
 
 def celery_state(task_id: str | None) -> str | None:
@@ -211,7 +223,7 @@ def celery_state(task_id: str | None) -> str | None:
 def job_view(session: Session, job: Job, *, settings: Settings | None = None) -> dict[str, Any]:
     """Derive status + progress and persist a snapshot on the row."""
     settings = settings or get_settings()
-    counts, found, usable, alerts = stage_counts(session, job)
+    counts, found, usable, alerts, ingest_failed = stage_counts(session, job)
     state = celery_state(job.celery_task_id)
     progress = round(sum(c.pct for c in counts) / len(counts), 1) if usable else 0.0
     current = next((c.stage for c in counts if c.done < c.total), None)
@@ -224,6 +236,14 @@ def job_view(session: Session, job: Job, *, settings: Settings | None = None) ->
         elif usable and current is None:
             job.status = "done"
             job.finished_at = job.finished_at or datetime.now(UTC)
+            if ingest_failed and not job.error:
+                # Not a job failure -- everything resolvable did resolve -- but
+                # worth surfacing: some scene(s) had a data gap at the source
+                # (e.g. a missing band COG) rather than actually being cloudy.
+                job.error = (
+                    f"{ingest_failed} of {usable} scene(s) could not be read "
+                    "(data gap at the source); the rest completed normally."
+                )
         elif state == "SUCCESS" and found == 0:
             job.status = "done"  # searched, nothing to process
             job.finished_at = job.finished_at or datetime.now(UTC)

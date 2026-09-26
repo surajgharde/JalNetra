@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useIndicators, useObservations, useWaterBody } from "@/api/hooks";
+import { useIndicators, useJob, useObservations, useWaterBody } from "@/api/hooks";
 import { ApiError } from "@/api/http";
 import { EmptyState, NotFoundState } from "@/components/States";
 import { StatTile, type Tone } from "@/components/StatTile";
@@ -18,9 +18,16 @@ import { MapView } from "./MapView";
 export function Overview() {
   const waterBodyId = useUi((s) => s.waterBodyId);
   const date = useUi((s) => s.date);
+  const jobId = useUi((s) => s.jobId);
   const body = useWaterBody(waterBodyId);
   const observations = useObservations(waterBodyId);
   const indicators = useIndicators(waterBodyId, date ?? undefined);
+  const job = useJob(jobId);
+  // A real, in-flight fetch for this exact lake -- not a fabricated result,
+  // just an honest "this is already happening" while the tiles wait on it.
+  const fetchingThisBody =
+    job.data?.water_body_id === waterBodyId &&
+    (job.data.status === "queued" || job.data.status === "running");
 
   // The strongest signed z-score on this scene: the headline finding, if any.
   const peak = useMemo(() => {
@@ -129,7 +136,9 @@ export function Overview() {
                       ? buildingReading.text
                       : indicators.data?.scene_id
                         ? "Building"
-                        : "No scenes yet"
+                        : fetchingThisBody
+                          ? "Fetching…"
+                          : "No scenes yet"
                 }
                 sub={
                   peak
@@ -138,7 +147,9 @@ export function Overview() {
                       ? "Current Sentinel-2 observation · Baseline in progress"
                       : indicators.data?.scene_id
                         ? "No baseline on this scene yet"
-                        : "Fetch satellite data above to begin monitoring"
+                        : fetchingThisBody
+                          ? "Sentinel-2 pass downloading — usually under a minute"
+                          : "Fetch satellite data above to begin monitoring"
                 }
                 tone={peakTone}
                 to="/indicators"
@@ -147,14 +158,22 @@ export function Overview() {
               <StatTile
                 key="extent"
                 label="Water extent"
-                value={observation?.water_extent_km2 != null ? fmtKm2(observation.water_extent_km2) : "No data yet"}
+                value={
+                  observation?.water_extent_km2 != null
+                    ? fmtKm2(observation.water_extent_km2)
+                    : fetchingThisBody
+                      ? "Fetching…"
+                      : "No data yet"
+                }
                 sub={
                   wb
                     ? observation?.water_extent_km2 != null
                       ? `Registered outline ${fmtKm2(wb.area_km2)}${
                           wb.area_km2 ? ` · ${((observation.water_extent_km2 / wb.area_km2) * 100).toFixed(0)}% full` : ""
                         }`
-                      : `Registered outline ${fmtKm2(wb.area_km2)} · fetch satellite data to measure it`
+                      : fetchingThisBody
+                        ? "Sentinel-2 pass downloading — usually under a minute"
+                        : `Registered outline ${fmtKm2(wb.area_km2)} · fetch satellite data to measure it`
                     : undefined
                 }
                 tone="neutral"
@@ -164,11 +183,19 @@ export function Overview() {
               <StatTile
                 key="scene"
                 label="Scene quality"
-                value={clearPct === null ? "No data yet" : `${clearPct.toFixed(0)}% clear`}
+                value={
+                  clearPct !== null
+                    ? `${clearPct.toFixed(0)}% clear`
+                    : fetchingThisBody
+                      ? "Fetching…"
+                      : "No data yet"
+                }
                 sub={
                   observation
                     ? `${observation.cloud_pct.toFixed(0)}% cloud · ${observation.stage}`
-                    : "Fetch satellite data above to check scene quality"
+                    : fetchingThisBody
+                      ? "Sentinel-2 pass downloading — usually under a minute"
+                      : "Fetch satellite data above to check scene quality"
                 }
                 tone={clearPct === null ? "neutral" : clearPct < 40 ? "warning" : "good"}
                 to="/trends"

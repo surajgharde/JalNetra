@@ -16,6 +16,15 @@ class IngestJobRequest(BaseModel):
     date_from: date
     date_to: date | None = Field(default=None, description="defaults to date_from")
     requested_by: str | None = Field(default=None, max_length=200)
+    max_scenes: int | None = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description=(
+            "stop after this many usable scenes are ingested (a quick-look fetch); "
+            "omitted or null processes every usable scene in the window, as before"
+        ),
+    )
 
     model_config = ConfigDict(
         json_schema_extra={

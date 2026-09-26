@@ -71,10 +71,19 @@ def heartbeat() -> None:
     acks_late=True,
 )
 def ingest_water_body(
-    self: Task, water_body_id: str, day: str, date_to: str | None = None
+    self: Task,
+    water_body_id: str,
+    day: str,
+    date_to: str | None = None,
+    max_scenes: int | None = None,
 ) -> dict[str, Any]:
     """Search and cache every usable scene for a water body on `day` (ISO date).
-    Idempotent: scenes already cached are reported as skipped, not re-read."""
+    Idempotent: scenes already cached are reported as skipped, not re-read.
+
+    ``max_scenes`` stops after that many usable scenes -- a quick-look fetch
+    triggered from the dashboard's "Fetch satellite data" button, which wants
+    the latest pass fast rather than a full historical backfill; omitted, the
+    whole window is processed exactly as before."""
     log.info(
         "ingest start",
         extra={"water_body_id": water_body_id, "day": day, "attempt": self.request.retries},
@@ -86,6 +95,7 @@ def ingest_water_body(
             water_body_id,
             date.fromisoformat(day),
             date_to=date.fromisoformat(date_to) if date_to else None,
+            max_usable_scenes=max_scenes,
         )
         session.commit()
         # Hand cached scenes to L4/L5. `skipped` scenes may have been cached by an

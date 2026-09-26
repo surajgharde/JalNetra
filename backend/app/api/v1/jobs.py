@@ -80,7 +80,10 @@ async def create_ingest_job(
         )
     else:
         result = ingest_water_body.delay(
-            body.water_body_id, body.date_from.isoformat(), date_to.isoformat()
+            body.water_body_id,
+            body.date_from.isoformat(),
+            date_to.isoformat(),
+            max_scenes=body.max_scenes,
         )
     job.celery_task_id = result.id
     view = await session.run_sync(lambda s: q.job_view(s, job))
