@@ -182,6 +182,13 @@ class Settings(BaseSettings):
     # --- Telegram push (Phase 2, L2): a "telegram" recipient channel, target = chat id ---
     telegram_bot_token: str | None = None
     dashboard_base_url: str = "http://localhost:5173"  # the frontend SPA, not the API
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+
+    # --- IoT buoy telemetry (Khadakwasla pilot) ---
+    # The buoy's own HTTP endpoint on the local network; unreachable is a
+    # normal, expected state that GET /api/v1/iot/live reports, not an error.
+    iot_endpoint: str = "http://192.168.137.213/api/data"
 
     # --- API (L2) ---
     # Write endpoints require one of these keys in X-API-Key; the value is the

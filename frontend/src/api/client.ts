@@ -18,6 +18,9 @@ import type {
   Methodology,
   IndicatorsResponse,
   IngestJobRequest,
+  IotAnalyzeRequest,
+  IotAnalyzeResponse,
+  IotLiveResponse,
   JobList,
   JobOut,
   LiveImagery,
@@ -143,6 +146,13 @@ export const api = {
   imagery: {
     status: () => request<ImageryStatus>(`${V1}/imagery/status`),
     live: (q: LiveImageryQuery) => request<LiveImagery>(`${V1}/imagery/live`, { query: { ...q } }),
+  },
+
+  /** Live buoy telemetry (Khadakwasla pilot) -- offline is a normal 200, not an error. */
+  iot: {
+    live: () => request<IotLiveResponse>(`${V1}/iot/live`),
+    analyze: (body: IotAnalyzeRequest) =>
+      request<IotAnalyzeResponse>(`${V1}/iot/analyze`, { method: "POST", body }),
   },
 
   tiles: {

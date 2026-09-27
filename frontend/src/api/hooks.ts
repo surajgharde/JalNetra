@@ -99,6 +99,18 @@ export const useTileStyles = () =>
 export const useImageryStatus = () =>
   useQuery({ queryKey: keys.imageryStatus, queryFn: api.imagery.status, staleTime: 5 * 60_000 });
 
+/** Polls the buoy every 5 s while the card is mounted (Khadakwasla pilot only). */
+export const useIotLive = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["iot-live"],
+    queryFn: api.iot.live,
+    enabled,
+    refetchInterval: 5000,
+    retry: false, // offline is a normal 200 already, not something to retry
+  });
+
+export const useIotAnalyze = () => useMutation({ mutationFn: api.iot.analyze });
+
 /** A styled Earth Engine map id; the backend caches it, so the map id is stable for ~1 h. */
 export const useLiveImagery = (q: LiveImageryQuery | null) =>
   useQuery({

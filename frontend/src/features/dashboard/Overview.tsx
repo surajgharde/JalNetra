@@ -8,6 +8,7 @@ import { fmtDate, fmtKm2, fmtSigned, indicatorShortLabel, statusLabel } from "@/
 import { cn } from "@/lib/utils";
 import { useUi } from "@/store/ui";
 import { FetchSatelliteButton } from "./FetchSatelliteButton";
+import { IotSensorCard } from "./IotSensorCard";
 import { MapView } from "./MapView";
 
 /**
@@ -202,6 +203,12 @@ export function Overview() {
                 cta="History"
               />,
             ]}
+      </div>
+
+      {/* Only ever renders for the Khadakwasla pilot; null (no layout impact)
+       * for every other water body. */}
+      <div className="shrink-0 px-2 pb-2">
+        <IotSensorCard waterBody={wb} />
       </div>
 
       <div className="min-h-0 flex-1 border-t">

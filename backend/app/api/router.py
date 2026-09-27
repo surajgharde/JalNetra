@@ -5,6 +5,7 @@ from app.api.v1 import (
     alerts,
     health,
     imagery,
+    iot,
     jobs,
     methodology,
     validations,
@@ -25,3 +26,4 @@ v1_router.include_router(jobs.router)
 v1_router.include_router(imagery.router)
 v1_router.include_router(methodology.router)
 v1_router.include_router(wishlist.router)
+v1_router.include_router(iot.router)

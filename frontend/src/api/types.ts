@@ -151,3 +151,41 @@ export interface DiscoverAtPointResponse {
   items: DiscoveredWaterBodyOut[];
   total: number;
 }
+
+// --- IoT buoy telemetry (Khadakwasla pilot) ---------------------------------------
+
+/** The buoy's own payload shape -- hardware-defined, not part of the frozen
+ * contract, so this is deliberately loose rather than pinned field-by-field. */
+export interface IotTelemetry {
+  device?: string;
+  timestamp_ms?: number;
+  temperature?: { value: number; unit?: string };
+  tds?: { value: number; unit?: string; adc?: number; voltage?: number };
+  turbidity?: { value: number; unit?: string; adc?: number; voltage?: number; status?: string };
+  wifi?: { rssi?: number; ip?: string };
+  [key: string]: unknown;
+}
+
+export interface IotLiveResponse {
+  online: boolean;
+  status: "online" | "offline";
+  data: IotTelemetry | null;
+  fetched_at: string | null;
+  error?: string | null;
+}
+
+export interface IotAnalyzeRequest {
+  water_body_name: string;
+  telemetry: IotTelemetry;
+}
+
+export interface IotAnalyzeResponse {
+  condition_summary: string;
+  parameters: {
+    temperature_analysis: string;
+    tds_analysis: string;
+    turbidity_analysis: string;
+  };
+  suggestions: string[];
+  future_prediction: string;
+}
