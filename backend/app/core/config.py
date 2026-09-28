@@ -188,7 +188,7 @@ class Settings(BaseSettings):
     # --- IoT buoy telemetry (Khadakwasla pilot) ---
     # The buoy's own HTTP endpoint on the local network; unreachable is a
     # normal, expected state that GET /api/v1/iot/live reports, not an error.
-    iot_endpoint: str = "http://192.168.137.213/api/data"
+    iot_endpoint: str = "http://192.168.137.239/api/data"
 
     # --- API (L2) ---
     # Write endpoints require one of these keys in X-API-Key; the value is the
