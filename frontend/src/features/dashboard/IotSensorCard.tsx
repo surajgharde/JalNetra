@@ -218,8 +218,11 @@ export function IotSensorCard({ waterBody }: { waterBody: WaterBodyDetail | null
       {!online ? (
         <div className="flex flex-col items-start gap-2 rounded-md border border-dashed bg-muted/40 p-3">
           <p className="text-xs text-muted-foreground">
-            IoT Sensor Buoy at Khadakwasla Dam is currently unreachable at 192.168.137.204. Ensure the
-            ESP32/buoy hardware is powered and connected to the hotspot/network.
+            {/* The address comes from the API, which knows the configured IOT_ENDPOINT --
+                hardcoding it here drifted out of step with the real device once already. */}
+            {live.data?.error ??
+              "IoT Sensor Buoy is currently unreachable."}{" "}
+            Ensure the ESP32/buoy hardware is powered and connected to the hotspot/network.
           </p>
           <Button size="sm" variant="outline" disabled={live.isFetching} onClick={() => void live.refetch()}>
             <RefreshCw className={cn("h-3.5 w-3.5", live.isFetching && "animate-spin")} /> Check connection

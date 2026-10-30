@@ -188,7 +188,11 @@ class Settings(BaseSettings):
     # --- IoT buoy telemetry (Khadakwasla pilot) ---
     # The buoy's own HTTP endpoint on the local network; unreachable is a
     # normal, expected state that GET /api/v1/iot/live reports, not an error.
-    iot_endpoint: str = "http://192.168.137.239/api/data"
+    iot_endpoint: str = "http://192.168.244.250/"
+    # The pilot ESP32 serves its own HTML dashboard rather than JSON, and answers in
+    # 1-2 s over the hotspot, so the old 2.5 s ceiling flapped. Both firmwares are
+    # read: JSON is used as-is, HTML is parsed into the same payload shape.
+    iot_timeout_s: float = 8.0
 
     # --- API (L2) ---
     # Write endpoints require one of these keys in X-API-Key; the value is the

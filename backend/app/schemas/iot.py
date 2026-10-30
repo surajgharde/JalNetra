@@ -29,7 +29,7 @@ class IotLiveResponse(BaseModel):
                     "status": "offline",
                     "data": None,
                     "fetched_at": None,
-                    "error": "IoT sensor buoy offline or unreachable on local network (192.168.137.204)",
+                    "error": "IoT sensor buoy offline or unreachable on local network (192.168.244.250)",
                 }
             ]
         }

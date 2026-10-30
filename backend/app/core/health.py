@@ -46,7 +46,7 @@ async def check_stac(settings: Settings) -> None:
     """The configured STAC source answers its landing page (no search, no auth).
     With Earth Engine as the primary source the STAC probe covers the fallback."""
     url = settings.cdse_stac_url if settings.stac_source == "cdse" else settings.earth_search_url
-    async with httpx.AsyncClient(timeout=settings.health_check_timeout_s) as client:
+    async with httpx.AsyncClient(timeout=_timeout_for("stac", settings)) as client:
         r = await client.get(url, follow_redirects=True)
         r.raise_for_status()
 

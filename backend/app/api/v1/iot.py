@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,7 +25,90 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/iot", tags=["iot"])
 
-OFFLINE_MESSAGE = "IoT sensor buoy offline or unreachable on local network (192.168.137.204)"
+# The pilot ESP32 firmware exposes no JSON API at all -- it serves one HTML dashboard
+# (meta-refresh every 2 s) with the readings rendered into the page. Reading the device
+# therefore means parsing that page, rather than blocking on a firmware release. Newer
+# firmware that does serve JSON keeps working unchanged: whichever the device returns
+# is normalised to the same payload shape.
+_LABEL_VALUE_RE = re.compile(
+    r'class="label"[^>]*>(?P<label>.*?)</div>\s*<div[^>]*class="value"[^>]*>(?P<value>.*?)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
+_STATUS_RE = re.compile(r'class="status"[^>]*>(?P<status>.*?)</div>', re.IGNORECASE | re.DOTALL)
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_TAG_RE = re.compile(r"<[^>]+>")
+
+# Card labels the dashboard is known to render, mapped onto the JSON contract's keys.
+# Anything else is passed through under its own slug, so a firmware that adds a card
+# shows up instead of being silently dropped.
+_LABEL_KEYS = {
+    "TURBIDITY": "turbidity",
+    "TDS": "tds",
+    "TEMPERATURE": "temperature",
+    "TEMP": "temperature",
+    "PH": "ph",
+}
+
+
+def _text(fragment: str) -> str:
+    return " ".join(_TAG_RE.sub(" ", fragment).split())
+
+
+def _parse_device_html(html: str) -> dict[str, Any] | None:
+    """The buoy's HTML dashboard as a telemetry payload, or None if it isn't one.
+
+    Units are taken verbatim from the page and never converted: this firmware reports
+    turbidity as a percentage, which is not NTU and has no calibration here to become
+    NTU. Relabelling it would invent precision the device never claimed.
+    """
+    payload: dict[str, Any] = {"device": "JAL NETRA ESP32", "source": "html"}
+    for match in _LABEL_VALUE_RE.finditer(html):
+        label = _text(match.group("label")).upper()
+        raw = _text(match.group("value"))
+        number = _NUMBER_RE.search(raw)
+        if not label or number is None:
+            continue
+        entry: dict[str, Any] = {"value": float(number.group())}
+        unit = raw[number.end() :].strip()
+        if unit:
+            entry["unit"] = unit
+        payload[_LABEL_KEYS.get(label, label.lower().replace(" ", "_"))] = entry
+    if len(payload) <= 2:  # nothing but the two metadata keys -- not a reading page
+        return None
+    status = _STATUS_RE.search(html)
+    if status:
+        # The page's own verdict on the water. Deliberately NOT turbidity.status,
+        # which in the JSON contract means the health of that one probe.
+        text = re.sub(r"^STATUS\s*:\s*", "", _text(status.group("status")), flags=re.IGNORECASE)
+        if text.strip():
+            payload["device_status"] = text.strip()
+    return payload
+
+
+def _payload_from_response(body: str, content_type: str) -> dict[str, Any] | None:
+    """Normalise whatever the hardware answered into one payload shape."""
+    text = body.strip()
+    if not text:
+        return None
+    if "json" in content_type.lower() or text[:1] in "{[":
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    if "<" in text:
+        return _parse_device_html(text)
+    return None
+
+
+def _offline_message(settings: Settings) -> str:
+    """Name the address we actually tried, not a hardcoded one.
+
+    This used to pin a literal IP that drifted out of step with IOT_ENDPOINT, so the
+    error told operators the buoy was unreachable at an address nothing had contacted.
+    """
+    host = urlsplit(settings.iot_endpoint).hostname or settings.iot_endpoint
+    return f"IoT sensor buoy offline or unreachable on local network ({host})"
 
 SYSTEM_PROMPT = (
     "You are the JalNetra Senior Limnologist and Water Intelligence AI. You analyze "
@@ -70,13 +155,32 @@ async def iot_live(settings: Annotated[Settings, Depends(get_settings)]) -> IotL
     ``online: false`` with a 200, so the frontend can show it gracefully
     instead of an error boundary."""
     try:
-        async with httpx.AsyncClient(timeout=2.5) as client:
+        async with httpx.AsyncClient(timeout=settings.iot_timeout_s) as client:
             r = await client.get(settings.iot_endpoint)
             r.raise_for_status()
-            data = r.json()
+            body, content_type = r.text, r.headers.get("content-type", "")
     except Exception as exc:
         log.info("iot buoy unreachable", extra={"endpoint": settings.iot_endpoint, "error": str(exc)})
-        return IotLiveResponse(online=False, status="offline", data=None, error=OFFLINE_MESSAGE)
+        return IotLiveResponse(
+            online=False, status="offline", data=None, error=_offline_message(settings)
+        )
+    data = _payload_from_response(body, content_type)
+    if data is None:
+        # The device answered, so it is not offline -- but nothing in the reply looks
+        # like a reading. Say that precisely instead of blaming the network.
+        log.warning(
+            "iot payload not understood",
+            extra={"endpoint": settings.iot_endpoint, "content_type": content_type},
+        )
+        return IotLiveResponse(
+            online=False,
+            status="offline",
+            data=None,
+            error=(
+                f"The device at {urlsplit(settings.iot_endpoint).hostname} answered, but "
+                "its reply carried no readings this app could read."
+            ),
+        )
     return IotLiveResponse(
         online=True,
         status="online",

@@ -33,10 +33,11 @@ pollution, contamination or discharge.
 9. [API reference](#api-reference)
 10. [Layer-by-layer details](#layer-by-layer-details)
 11. [Frontend](#frontend)
-12. [Operations and observability](#operations-and-observability)
-13. [Development](#development)
-14. [Status, verified results and known issues](#status-verified-results-and-known-issues)
-15. [Data sources and attribution](#data-sources-and-attribution)
+12. [Telegram bot and IoT sensor buoy](#telegram-bot-and-iot-sensor-buoy)
+13. [Operations and observability](#operations-and-observability)
+14. [Development](#development)
+15. [Status, verified results and known issues](#status-verified-results-and-known-issues)
+16. [Data sources and attribution](#data-sources-and-attribution)
 
 ---
 
@@ -275,6 +276,8 @@ are most likely to touch:
 | API | `API_KEYS` (`{"<key>": "<actor>"}`; empty = open in dev/test, refused in prod), `RATE_LIMIT_*`, `API_CACHE_*` |
 | Validation | `VALIDATION_THRESHOLDS`, `VALIDATION_MAX_LAG_DAYS`, `RETRAIN_*` |
 | Ops | `SENTRY_DSN`, `WORKER_METRICS_PORT`, `WORKERS_*`, `TASK_*_TIME_LIMIT_S`, `TIER1_STALE_DAYS` |
+| Telegram bot | `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `JALNETRA_API_BASE_URL`, `JALNETRA_API_KEY`, `DASHBOARD_BASE_URL`, `TELEGRAM_CONNECT_TIMEOUT_S`, `TELEGRAM_READ_TIMEOUT_S`, `TELEGRAM_POLL_TIMEOUT_S`, `TELEGRAM_BOOTSTRAP_RETRIES` |
+| IoT buoy | `IOT_ENDPOINT` (the hardware's own URL on the local network), `IOT_TIMEOUT_S`, `IOT_WATER_BODY_NAME` |
 
 ## API reference
 
@@ -297,6 +300,8 @@ Interactive docs at http://localhost:8000/docs. All product endpoints are under
 | `GET /jobs/{id}/report.pdf`, `/jobs/{id}/report.csv` | Analysis report of a run, day by day, with satellite images and zone data |
 | `GET /imagery/status`, `GET /imagery/live?bbox=&vis=&date=&days=&composite=` | Earth Engine session status; styled live map id (XYZ template served by Google) |
 | `GET /methodology` | The method, indicators with scientific basis, parameters, limitations |
+| `GET /iot/live` | Live in-situ reading from the pilot sensor buoy; always 200, `online: false` when the hardware is unreachable. Reads either firmware: JSON as-is, or the ESP32's HTML dashboard parsed into the same shape |
+| `POST /iot/analyze` | AI limnologist's reading of one buoy sample (not persisted, not fed into alerting) |
 | `GET /tiles/{layer}/{water_body_id}/{date}/{z}/{x}/{y}.png`, `/tiles/chip/{key}/...`, `/tiles/styles` | Styled raster tiles for indicator, water-mask and anomaly chips |
 
 ## Layer-by-layer details
@@ -479,6 +484,62 @@ Export the schema with
   `store/ui.ts` (zustand UI state), TanStack Query for all server data.
 - The disclaimer comes from the API on every alert view, list, feed and
   indicator panel; never hardcoded, never hidden.
+
+## Telegram bot and IoT sensor buoy
+
+A second delivery surface: an AI assistant on Telegram that answers from the
+platform's own data through OpenAI function calling, and reads the in-situ
+sensor buoy deployed at the Khadakwasla pilot site.
+
+```sh
+cd backend && uv run python -m app.telegram.bot     # polling; no webhook or tunnel
+```
+
+Needs `TELEGRAM_BOT_TOKEN` and `OPENAI_API_KEY` (read from the repo-root `.env`).
+`JALNETRA_API_BASE_URL` defaults to `http://localhost:8000/api/v1`, so the API
+stack must be up for any data-backed command.
+
+| Command | What it does |
+| --- | --- |
+| `/device`, `/iot` | The buoy's current reading: temperature, TDS (ppm), turbidity (NTU), raw probe ADC/voltage, probe status, WiFi signal and IP |
+| `/analyze` | An expert limnologist's reading of those numbers: what they mean together, recommended actions, 7-14 day outlook |
+| `/status <lake>` | Satellite indicator card + chip for one water body |
+| `/list`, `/saved`, `/lakes` | Tap-for-status keyboards; wishlist; top monitored lakes |
+| `/nearby` | Share GPS location to discover surrounding water bodies |
+| `/alerts` | Active high-priority alerts |
+
+Plain-language questions work without a command — "what's the water temperature
+now?", "is the buoy online?", "is the water safe?" — and route to the device
+tools; questions about indicators or a named lake route to the satellite tools.
+
+**Two sources, kept distinct.** The buoy's probes are *direct measurements* at
+one point; the satellite indicators are *proxies* inferred from reflectance over
+the whole surface. The bot states which source a number came from and never
+presents a proxy as a laboratory result. When the two disagree, that is
+information (a local plume, a drifting probe, a stale pass), not a fault to
+average away.
+
+**Two firmwares, one payload shape.** The ESP32 deployed at the pilot serves no
+JSON API — only its own HTML dashboard (meta-refresh, readings rendered into the
+page) — so `GET /iot/live` parses that page into the same shape a JSON firmware
+would return, and marks it `source: "html"`. Units are taken verbatim and never
+converted: this build reports turbidity as a **percentage**, which is not NTU and
+has no calibration here to become NTU, so the bot shows the number and withholds
+the NTU clarity band rather than scoring a percentage against a drinking-water
+guideline it never measured. Its page-level `STATUS` is surfaced as
+`device_status`, kept distinct from the JSON contract's per-probe `status`.
+
+**Offline is data, not an error.** Field hardware is routinely powered down, out
+of hotspot range or mid-reboot, so `GET /iot/live` answers 200 with
+`online: false`, the bot says so plainly, and it falls back to satellite
+indicators rather than implying the device reported something. Nothing from the
+buoy is persisted or fed into the alerting pipeline — it is a live snapshot, not
+a scored finding.
+
+Timeouts are env-overridable (`TELEGRAM_CONNECT_TIMEOUT_S`,
+`TELEGRAM_READ_TIMEOUT_S`, `TELEGRAM_POLL_TIMEOUT_S`,
+`TELEGRAM_BOOTSTRAP_RETRIES`) because some links throttle Telegram badly enough
+that the library's 5 s default aborts during startup.
 
 ## Operations and observability
 

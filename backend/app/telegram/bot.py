@@ -42,9 +42,11 @@ from app.core.logging import configure_logging
 from app.telegram.tools import (
     TOOL_FUNCTIONS,
     TOOLS,
+    analyze_device_telemetry,
     discover_lakes,
     fetch_thumbnail_bytes,
     get_active_alerts,
+    get_device_telemetry,
     get_lake_health,
     get_lake_health_by_id,
     list_top_lakes,
@@ -60,34 +62,72 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DASHBOARD_BASE_URL = os.getenv("DASHBOARD_BASE_URL", "http://localhost:5173")
 
+# python-telegram-bot defaults to a 5 s connect timeout, which is far too tight on
+# links that throttle Telegram: api.telegram.org has been measured taking ~19 s to
+# finish its TLS handshake from an Indian consumer connection, so the default aborts
+# during bootstrap's get_me() and the bot never starts. Generous ceilings only cost
+# time on a genuinely dead network; they do not slow down a healthy one.
+TELEGRAM_CONNECT_TIMEOUT_S = float(os.getenv("TELEGRAM_CONNECT_TIMEOUT_S", "60"))
+TELEGRAM_READ_TIMEOUT_S = float(os.getenv("TELEGRAM_READ_TIMEOUT_S", "60"))
+# Long polling holds the request open for `timeout` seconds, so its read ceiling must
+# clear that plus the handshake.
+TELEGRAM_POLL_TIMEOUT_S = float(os.getenv("TELEGRAM_POLL_TIMEOUT_S", "30"))
+# Retry the bootstrap handshake instead of dying on the first slow connect.
+TELEGRAM_BOOTSTRAP_RETRIES = int(os.getenv("TELEGRAM_BOOTSTRAP_RETRIES", "5"))
+
 NEARBY_RADIUS_KM = 15.0
 MAX_TOOL_ROUNDS = 3  # a chained question ("find lakes, then check the biggest one") needs >1
 QUICK_LAKES_ON_LIST = 6  # /list and /saved show this many inline-keyboard buttons
 
 SYSTEM_PROMPT = (
-    "You are JalNetra AI, an intelligent satellite-based water quality & "
-    "contamination intelligence assistant for Maharashtra and India. You help "
-    "officials monitor surface water bodies, lakes, and reservoirs. You explain "
-    "indicators like Turbidity (NDTI), Chlorophyll-a (NDCI), Floating Algae (FAI), "
-    "and Surface Extent (MNDWI) politely and scientifically. When asked about a "
-    "specific lake's current status, nearby water bodies, active alerts, or to run "
-    "a satellite scan, use the tools available to you rather than guessing -- the "
-    "platform has live registry, indicator and alert data."
+    "You are JalNetra AI, a water quality & contamination intelligence assistant for "
+    "Maharashtra and India, working from two kinds of evidence. You help officials "
+    "monitor surface water bodies, lakes, and reservoirs.\n\n"
+    "1. IN-SITU IoT SENSOR BUOY (primary for 'right now'): a deployed device at the "
+    "Khadakwasla pilot site measuring water temperature, TDS (ppm), and turbidity "
+    "(NTU) directly in the water. These are DIRECT MEASUREMENTS. For any question "
+    "about current, live, measured or real-time conditions -- or anything naming the "
+    "device, buoy or sensor -- call get_device_telemetry, and "
+    "analyze_device_telemetry when asked what the readings mean or whether the water "
+    "is safe.\n"
+    "2. SENTINEL-2 SATELLITE indicators: Turbidity (NDTI), Chlorophyll-a (NDCI), "
+    "Floating Algae (FAI), Surface Extent (MNDWI). These are PROXIES inferred from "
+    "reflectance, covering the whole water body and years of history.\n\n"
+    "Be precise about which source a number came from, and give the units. The buoy "
+    "measures one point; the satellite sees the whole surface -- so when they "
+    "disagree, that is informative (a local plume, a sensor drifting, a stale pass), "
+    "not a contradiction to hide or average away. Never present a satellite proxy as "
+    "a laboratory measurement. If the buoy is offline, say so plainly and fall back "
+    "to satellite indicators rather than implying the device reported something. "
+    "Always use the tools rather than guessing -- the platform has live device, "
+    "registry, indicator and alert data. Explain limnology politely and "
+    "scientifically."
 )
 
 WELCOME_MESSAGE = (
     "🌊 Welcome to JalNetra Water Intelligence Bot! 🛰️\n\n"
-    "I am your AI assistant for monitoring lakes, reservoirs, and rivers across "
-    "India using Sentinel-2 satellite imagery. You can:\n"
-    "• Ask me questions about water quality and indicators.\n"
-    "• Discuss contamination, turbidity, or algal blooms.\n"
-    "• Send your live location (or /nearby) to discover surrounding lakes!"
+    "I monitor water quality from two sources — a *live IoT sensor buoy* in the "
+    "water, and Sentinel-2 satellite imagery from orbit.\n\n"
+    "📡 */device* — live readings from the buoy right now: temperature, dissolved "
+    "solids (TDS), turbidity, probe diagnostics and signal strength\n"
+    "🔬 */analyze* — an expert reading of what those numbers mean, with recommended "
+    "actions\n"
+    "🛰 */status <lake>* — satellite indicator card for any monitored lake\n"
+    "📍 */nearby* — share your location to discover water bodies around you\n\n"
+    "Or just ask in plain language — \"what's the water temperature now?\", \"is the "
+    "water safe?\", \"is the sensor online?\" — and I'll read the device for you."
 )
 
 HELP_MESSAGE = (
     "*JalNetra Water Intelligence Bot — commands*\n\n"
     "/start — welcome message and what this bot can do\n"
-    "/help — this list\n"
+    "/help — this list\n\n"
+    "*Live IoT sensor buoy*\n"
+    "/device — the buoy's current reading: temperature, TDS, turbidity, probe "
+    "diagnostics and signal (/iot works too)\n"
+    "/analyze — an expert limnologist's reading of those numbers, with recommended "
+    "actions and a 7-14 day outlook\n\n"
+    "*Satellite monitoring*\n"
     "/status <lake> — a satellite snapshot + indicator card for one lake\n"
     "/list — tap a monitored lake for its status card\n"
     "/saved — your wishlist, same tap-for-status buttons\n"
@@ -195,6 +235,222 @@ async def nearby_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"within {NEARBY_RADIUS_KM:.0f} km.",
         reply_markup=keyboard,
     )
+
+
+def _turbidity_reading(ntu: float, unit: str | None = "NTU") -> str:
+    """A plain-language band for an NTU reading.
+
+    Anchored on the WHO/BIS drinking-water guideline (< 1 NTU ideal, <= 5 NTU the
+    acceptable limit) and ordinary surface-water practice above that. This describes
+    clarity only -- turbidity is not a contamination verdict, and nothing here is a
+    substitute for a lab assay.
+
+    Returns "" for any other unit. The pilot ESP32 reports turbidity as a percentage,
+    and there is no calibration here to turn that into NTU -- scoring a percentage
+    against NTU thresholds would read as a guideline breach that was never measured.
+    """
+    if (unit or "NTU").strip().upper() not in ("NTU", ""):
+        return ""
+    if ntu < 1:
+        return "very clear"
+    if ntu < 5:
+        return "clear"
+    if ntu < 50:
+        return "slightly turbid"
+    if ntu < 200:
+        return "turbid"
+    return "very turbid"
+
+
+def _tds_reading(ppm: float) -> str:
+    """A plain-language band for TDS in ppm, on the usual potability scale."""
+    if ppm < 50:
+        return "very low mineral content"
+    if ppm < 300:
+        return "fresh, low mineralisation"
+    if ppm < 600:
+        return "good — typical freshwater"
+    if ppm < 900:
+        return "fair — noticeably mineralised"
+    if ppm < 1200:
+        return "poor — high dissolved solids"
+    return "very high — brackish"
+
+
+def _signal_bar(rssi: float) -> str:
+    """WiFi RSSI in dBm as a coarse strength word, for field diagnostics."""
+    if rssi >= -60:
+        return "strong"
+    if rssi >= -70:
+        return "good"
+    if rssi >= -80:
+        return "weak"
+    return "very weak"
+
+
+def _fmt(value: Any, unit: str = "", nd: int = 2) -> str:
+    """Numbers to a fixed precision, anything unreported as an em dash.
+
+    A missing field means the firmware did not send it; showing a bare "0" there
+    would invent a measurement the device never took.
+    """
+    if value is None:
+        return "—"
+    if isinstance(value, (int, float)):
+        text = f"{value:.{nd}f}".rstrip("0").rstrip(".") if isinstance(value, float) else str(value)
+        return f"{text} {unit}".strip()
+    return f"{value} {unit}".strip()
+
+
+def format_device_card(t: dict[str, Any]) -> str:
+    """The buoy's full current payload as one Telegram card."""
+    if not t.get("online"):
+        return (
+            "📡 *IoT Sensor Buoy — OFFLINE*\n\n"
+            f"{t.get('error') or 'The device is not reachable right now.'}\n\n"
+            "This is a normal field state: the buoy may be powered down, out of "
+            "hotspot range, or mid-reboot. Satellite indicators are unaffected — try "
+            "/status <lake> meanwhile."
+        )
+
+    lines = [
+        "📡 *IoT Sensor Buoy — LIVE*",
+        f"Device: `{t.get('device', 'unknown')}`",
+        "",
+        "*In-water measurements*",
+    ]
+
+    temp = t.get("temperature")
+    lines.append(f"🌡 Temperature: *{_fmt(temp, t.get('temperature_unit', '°C'))}*")
+
+    tds = t.get("tds")
+    tds_line = f"🧪 TDS: *{_fmt(tds, t.get('tds_unit', 'ppm'))}*"
+    if isinstance(tds, (int, float)):
+        tds_line += f"\n     _{_tds_reading(float(tds))}_"
+    lines.append(tds_line)
+
+    ntu = t.get("turbidity")
+    turb_unit = t.get("turbidity_unit", "NTU")
+    turb_line = f"💧 Turbidity: *{_fmt(ntu, turb_unit)}*"
+    if isinstance(ntu, (int, float)):
+        band = _turbidity_reading(float(ntu), turb_unit)
+        if band:
+            turb_line += f"\n     _{band}_"
+    lines.append(turb_line)
+
+    # The device's own verdict, when its firmware offers one. Kept separate from the
+    # probe-health field of the same name in the JSON contract.
+    if t.get("device_status"):
+        lines.append(f"📟 Device status: *{t['device_status']}*")
+
+    # Raw ADC/voltage is what tells a field engineer a probe is drifting or
+    # disconnected, so it belongs on the card rather than only in the API payload.
+    raw: list[str] = []
+    if t.get("tds_adc") is not None or t.get("tds_voltage") is not None:
+        raw.append(
+            f"TDS probe: ADC {_fmt(t.get('tds_adc'), nd=0)} · "
+            f"{_fmt(t.get('tds_voltage'), 'V', 3)}"
+        )
+    if t.get("turbidity_adc") is not None or t.get("turbidity_voltage") is not None:
+        raw.append(
+            f"Turbidity probe: ADC {_fmt(t.get('turbidity_adc'), nd=0)} · "
+            f"{_fmt(t.get('turbidity_voltage'), 'V', 3)}"
+        )
+    if t.get("turbidity_status"):
+        raw.append(f"Probe status: {t['turbidity_status']}")
+    if raw:
+        lines += ["", "*Sensor diagnostics*"] + [f"• {r}" for r in raw]
+
+    link: list[str] = []
+    if t.get("wifi_rssi") is not None:
+        rssi = t["wifi_rssi"]
+        strength = f" ({_signal_bar(float(rssi))})" if isinstance(rssi, (int, float)) else ""
+        link.append(f"Signal: {_fmt(rssi, 'dBm', 0)}{strength}")
+    if t.get("wifi_ip"):
+        link.append(f"IP: `{t['wifi_ip']}`")
+    if t.get("reported_at"):
+        link.append(f"Reported: {t['reported_at']}")
+    elif t.get("timestamp_ms"):
+        link.append(f"Device clock: {t['timestamp_ms']} ms since boot")
+    if link:
+        lines += ["", "*Link*"] + [f"• {item}" for item in link]
+
+    lines += [
+        "",
+        "_One point measurement from a single buoy — indicative, not a lab assay._",
+        "Tap /analyze for an expert reading of these numbers.",
+    ]
+    return "\n".join(lines)
+
+
+def format_device_analysis(result: dict[str, Any]) -> str:
+    """The AI limnologist's reading of the buoy sample."""
+    analysis = result.get("analysis") or {}
+    lines = [
+        f"🔬 *Expert reading — {result.get('water_body', 'sensor buoy')}*",
+        "",
+        analysis.get("condition_summary", "No summary returned."),
+    ]
+    params = analysis.get("parameters") or {}
+    labels = {
+        "temperature_analysis": "🌡 Temperature",
+        "tds_analysis": "🧪 Dissolved solids",
+        "turbidity_analysis": "💧 Turbidity",
+    }
+    detail = [f"*{labels[k]}*\n{params[k]}" for k in labels if params.get(k)]
+    if detail:
+        lines += ["", *detail]
+    if analysis.get("suggestions"):
+        lines += ["", "*Recommended actions*"]
+        lines += [f"{i}. {s}" for i, s in enumerate(analysis["suggestions"], 1)]
+    if analysis.get("future_prediction"):
+        lines += ["", f"*7-14 day outlook*\n{analysis['future_prediction']}"]
+    lines += [
+        "",
+        "_An AI interpretation of one in-situ sample — not a scored JalNetra finding, "
+        "and not a substitute for ground validation._",
+    ]
+    return "\n".join(lines)
+
+
+async def device_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/device — the sensor buoy's current reading, every field it reported."""
+    if not update.message:
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+    telemetry = await get_device_telemetry()
+    keyboard = None
+    if telemetry.get("online"):
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🔬 Expert reading", callback_data="iot_analyze")],
+                [InlineKeyboardButton("🔄 Refresh", callback_data="iot_refresh")],
+            ]
+        )
+    try:
+        await update.message.reply_text(
+            format_device_card(telemetry), parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
+        )
+    except BadRequest:
+        await update.message.reply_text(format_device_card(telemetry), reply_markup=keyboard)
+
+
+async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/analyze — an AI limnologist's reading of the buoy's current sample."""
+    if not update.message:
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+    result = await analyze_device_telemetry()
+    if not result.get("online"):
+        await reply_markdown_safe(update.message, format_device_card(result))
+        return
+    if result.get("error"):
+        await update.message.reply_text(
+            f"The buoy is reporting, but the AI reading failed: {result['error']}\n\n"
+            "Use /device for the raw numbers."
+        )
+        return
+    await reply_markdown_safe(update.message, format_device_analysis(result))
 
 
 async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -311,6 +567,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await context.bot.send_message(chat_id=chat_id, text=health["error"])
             return
         await send_lake_status(context.bot, chat_id, health)
+    elif data in ("iot_refresh", "iot_analyze"):
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        if data == "iot_refresh":
+            text = format_device_card(await get_device_telemetry())
+        else:
+            result = await analyze_device_telemetry()
+            if not result.get("online"):
+                text = format_device_card(result)
+            elif result.get("error"):
+                text = (
+                    f"The buoy is reporting, but the AI reading failed: {result['error']}\n\n"
+                    "Use /device for the raw numbers."
+                )
+            else:
+                text = format_device_analysis(result)
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN
+            )
+        except BadRequest:
+            await context.bot.send_message(chat_id=chat_id, text=text)
     elif data == "search_hint":
         await context.bot.send_message(
             chat_id=chat_id, text="Type a lake name (e.g. \"Ambazari Lake\"), or use /nearby to search by location."
@@ -442,9 +719,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def build_application() -> Application:
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set (checked the environment and .env).")
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    application = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .connect_timeout(TELEGRAM_CONNECT_TIMEOUT_S)
+        .read_timeout(TELEGRAM_READ_TIMEOUT_S)
+        .write_timeout(TELEGRAM_READ_TIMEOUT_S)
+        .pool_timeout(TELEGRAM_CONNECT_TIMEOUT_S)
+        .get_updates_connect_timeout(TELEGRAM_CONNECT_TIMEOUT_S)
+        .get_updates_read_timeout(TELEGRAM_POLL_TIMEOUT_S + TELEGRAM_READ_TIMEOUT_S)
+        .build()
+    )
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("device", device_command))
+    application.add_handler(CommandHandler("iot", device_command))  # alias people reach for
+    application.add_handler(CommandHandler("analyze", analyze_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("saved", saved_command))
@@ -461,7 +751,11 @@ def main() -> None:
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     application = build_application()
     log.info("JalNetra telegram bot starting (polling)")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        timeout=int(TELEGRAM_POLL_TIMEOUT_S),
+        bootstrap_retries=TELEGRAM_BOOTSTRAP_RETRIES,
+    )
 
 
 if __name__ == "__main__":

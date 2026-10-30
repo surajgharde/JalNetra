@@ -343,6 +343,107 @@ async def list_wishlist() -> list[dict[str, Any]]:
     return data.get("items", [])
 
 
+# --- IoT sensor buoy (in-situ telemetry) ---------------------------------------------
+#
+# The satellite tools above infer water quality from reflectance; these two read the
+# pilot buoy's own probes in the water. Keep the distinction visible to GPT: a
+# satellite indicator is a proxy, an in-situ probe is a direct measurement, and the
+# two disagreeing is information rather than a fault.
+
+# The buoy is field hardware on a local hotspot: powered down, out of range or
+# mid-reboot are everyday states, so "offline" is data, never an error to apologise
+# for. /iot/live already answers 200 with online:false; these wrappers preserve that.
+IOT_WATER_BODY_NAME = os.getenv("IOT_WATER_BODY_NAME", "Khadakwasla Dam")
+
+
+def _flatten_telemetry(payload: dict[str, Any]) -> dict[str, Any]:
+    """The buoy's nested payload as flat, labelled scalars.
+
+    Tolerates whichever fields a given firmware sent -- the hardware payload is
+    deliberately not part of the frozen API contract (see app/schemas/iot.py), so a
+    missing key means "this firmware didn't report it", not a bug.
+    """
+    temp = payload.get("temperature") or {}
+    tds = payload.get("tds") or {}
+    turb = payload.get("turbidity") or {}
+    wifi = payload.get("wifi") or {}
+    ts_ms = payload.get("timestamp_ms")
+    reported_at: str | None = None
+    if isinstance(ts_ms, (int, float)) and ts_ms > 0:
+        # Firmware sends milliseconds; some builds send device uptime rather than a
+        # wall clock, so an absurd date here is the device's, not ours to correct.
+        try:
+            reported_at = datetime.fromtimestamp(ts_ms / 1000, tz=UTC).isoformat()
+        except (OverflowError, OSError, ValueError):
+            reported_at = None
+    return {
+        "online": True,
+        "device": payload.get("device") or "unknown",
+        # The firmware's own verdict on the water, when it offers one, and how the
+        # reading reached us ("html" = scraped from the device's dashboard page,
+        # because that firmware serves no JSON).
+        "device_status": payload.get("device_status"),
+        "source": payload.get("source") or "json",
+        "reported_at": reported_at,
+        "timestamp_ms": ts_ms,
+        "temperature": temp.get("value"),
+        "temperature_unit": temp.get("unit") or "°C",
+        "tds": tds.get("value"),
+        "tds_unit": tds.get("unit") or "ppm",
+        "tds_adc": tds.get("adc"),
+        "tds_voltage": tds.get("voltage"),
+        "turbidity": turb.get("value"),
+        "turbidity_unit": turb.get("unit") or "NTU",
+        "turbidity_adc": turb.get("adc"),
+        "turbidity_voltage": turb.get("voltage"),
+        "turbidity_status": turb.get("status"),
+        "wifi_rssi": wifi.get("rssi"),
+        "wifi_ip": wifi.get("ip"),
+    }
+
+
+async def get_device_telemetry() -> dict[str, Any]:
+    """Live in-situ reading from the IoT sensor buoy, or why it is unavailable."""
+    try:
+        live = await _get("/iot/live")
+    except Exception as exc:  # backend down is different from buoy down; say which
+        log.info("iot live fetch failed", extra={"error": str(exc)})
+        return {"online": False, "error": f"Could not reach the JalNetra backend: {exc}"}
+    if not live.get("online"):
+        return {"online": False, "error": live.get("error") or "Sensor buoy offline."}
+    return _flatten_telemetry(live.get("data") or {})
+
+
+async def analyze_device_telemetry(water_body_name: str = "") -> dict[str, Any]:
+    """An AI limnologist's reading of the buoy's current sample.
+
+    A snapshot opinion on one telemetry sample -- not a scored finding, not persisted,
+    and deliberately not fed into the alerting pipeline (see app/api/v1/iot.py).
+    """
+    try:
+        live = await _get("/iot/live")
+    except Exception as exc:
+        log.info("iot live fetch failed", extra={"error": str(exc)})
+        return {"online": False, "error": f"Could not reach the JalNetra backend: {exc}"}
+    if not live.get("online"):
+        return {"online": False, "error": live.get("error") or "Sensor buoy offline."}
+    body = {
+        "water_body_name": water_body_name or IOT_WATER_BODY_NAME,
+        "telemetry": live.get("data") or {},
+    }
+    try:
+        analysis = await _post("/iot/analyze", body)
+    except Exception as exc:
+        log.warning("iot analyze failed", extra={"error": str(exc)})
+        return {"online": True, "error": f"AI analysis unavailable: {exc}"}
+    return {
+        "online": True,
+        "water_body": body["water_body_name"],
+        "telemetry": _flatten_telemetry(live.get("data") or {}),
+        "analysis": analysis,
+    }
+
+
 # --- OpenAI tool schemas + dispatch table --------------------------------------------
 
 TOOLS: list[dict[str, Any]] = [
@@ -412,6 +513,48 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_device_telemetry",
+            "description": (
+                "Reads the LIVE in-situ IoT sensor buoy deployed at the Khadakwasla "
+                "pilot site: water temperature, TDS (dissolved solids, ppm), turbidity "
+                "(NTU) with raw ADC/voltage, sensor health and WiFi signal. Use this "
+                "for any question about measured, current, real-time or in-water "
+                "readings from the device/buoy/sensor -- these are direct probe "
+                "measurements, unlike the satellite indicators which are proxies. "
+                "Returns online:false when the buoy is unreachable, which is a normal "
+                "field state."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_device_telemetry",
+            "description": (
+                "Expert limnologist interpretation of the sensor buoy's current "
+                "reading: what the temperature, TDS and turbidity mean together, "
+                "actionable suggestions for authorities, and a 7-14 day outlook. Use "
+                "when the user asks what the device readings mean, whether the water "
+                "is safe, or what to do about them -- not for the raw numbers alone."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "water_body_name": {
+                        "type": "string",
+                        "description": (
+                            "Water body the buoy sits in. Defaults to the configured "
+                            "pilot site when omitted."
+                        ),
+                    },
+                },
+            },
+        },
+    },
 ]
 
 TOOL_FUNCTIONS = {
@@ -419,4 +562,6 @@ TOOL_FUNCTIONS = {
     "get_lake_health": get_lake_health,
     "get_active_alerts": get_active_alerts,
     "trigger_scan": trigger_scan,
+    "get_device_telemetry": get_device_telemetry,
+    "analyze_device_telemetry": analyze_device_telemetry,
 }
