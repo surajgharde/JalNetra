@@ -189,13 +189,28 @@ async def iot_live(settings: Annotated[Settings, Depends(get_settings)]) -> IotL
     )
 
 
+def _field(t: dict[str, Any], key: str) -> dict[str, Any]:
+    """One reading as a dict, whichever way the firmware spelled it.
+
+    The nested form (``{"turbidity": {"value": 12, "unit": "NTU"}}``) is what the
+    pilot ESP32 sends, but /iot/live hands through whatever JSON the hardware
+    answered, so a firmware reporting a bare scalar (``{"turbidity": 12}``) used to
+    reach this with an int and raise AttributeError -- a 500 on /iot/analyze, which
+    is the chatbot's /analyze path. Normalise instead of assuming the nested shape.
+    """
+    v = t.get(key)
+    if isinstance(v, dict):
+        return v
+    return {"value": v} if v is not None else {}
+
+
 def _telemetry_lines(t: dict[str, Any]) -> str:
     """Pull just the fields the prompt asks for out of the buoy's raw payload,
     tolerating whichever ones a given firmware happened to send."""
-    temp = t.get("temperature") or {}
-    tds = t.get("tds") or {}
-    turb = t.get("turbidity") or {}
-    wifi = t.get("wifi") or {}
+    temp = _field(t, "temperature")
+    tds = _field(t, "tds")
+    turb = _field(t, "turbidity")
+    wifi = _field(t, "wifi")
     lines = [
         f"Device: {t.get('device', 'unknown')}",
         f"Temperature: {temp.get('value')} {temp.get('unit', '')}".strip(),

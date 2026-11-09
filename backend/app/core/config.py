@@ -133,6 +133,24 @@ class Settings(BaseSettings):
         0.30  # more hot water than this is a body-wide shift, not a plume
     )
     spatial_max_hot_pixels: int = 200_000  # DBSCAN guard at very large bodies
+    # Second, per-zone localisation pass (display only, never votes): re-contrast
+    # a flagged zone against its own water when the body-wide pass found no
+    # cluster in it, so the map draws a patch instead of the whole zone.
+    spatial_localise_zones: bool = True
+    # A percentile rule, not a threshold: the temporal detector already said the
+    # zone deviated, so this only asks where inside it the indicator is worst.
+    # 5% of a ~2.5 km2 zone is ~0.12 km2 -- the same scale as the real plumes the
+    # body-wide pass finds, and small enough to read as a patch.
+    spatial_localise_top_percent: float = 5.0
+    # ...but never highlight noise: a uniform zone's 95th percentile sits below
+    # this, so it yields nothing and the honest "zone-wide" answer stands.
+    spatial_localise_z_floor: float = 1.0
+    spatial_localise_min_area_km2: float = 0.01
+    # The union of many specks spread over a zone reads as the whole zone again,
+    # because the map fits the shape's bbox. Keep few patches, and only ones
+    # close to the largest (40 px ~ 400 m at 10 m/px).
+    spatial_localise_max_clusters: int = 3
+    spatial_localise_max_spread_px: float = 40.0
     multivariate_min_history: int = 20  # scenes needed before IsolationForest is fitted
     multivariate_contamination: float = 0.05
     multivariate_seed: int = 42
@@ -204,6 +222,13 @@ class Settings(BaseSettings):
     rate_limit_default: str = "240/minute"  # slowapi syntax, per client IP
     rate_limit_tiles: str = "2000/minute"
     tile_cache_max_age_s: int = 3600  # Cache-Control on proxied tiles (chips are immutable)
+    # Stretch each layer's colour ramp over the chip's own p2-p98 instead of the
+    # indicator's full physical range. Without it a lake occupies ~6-20% of its
+    # ramp and renders as one flat colour over the whole water body.
+    tile_adaptive_rescale: bool = True
+    # Chips are immutable, so their statistics are too; one TiTiler call per
+    # chip per week, not per tile.
+    tile_stats_cache_ttl_s: int = 604_800
 
     # --- Validation loop (L13) ---
     validation_max_lag_days: int = 5  # sample later than this after the observation -> inconclusive

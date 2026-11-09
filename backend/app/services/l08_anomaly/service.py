@@ -30,7 +30,7 @@ import logging
 import math
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -75,6 +75,7 @@ from app.services.l08_anomaly.spatial import (
     SpatialResult,
     spatial_detector,
     union_geom,
+    zone_localised_clusters,
 )
 from app.services.l08_anomaly.temporal import TemporalResult, temporal_detector
 
@@ -103,6 +104,28 @@ class ZoneVerdict:
     alertable: bool
     suppressed_reason: str | None
     affected_area_km2: float | None
+    # Where inside the zone the deviation sits, when the body-wide spatial pass
+    # found no cluster here. Localisation only -- deliberately NOT part of
+    # `votes`, `severity` or `affected_area_km2`, so adding it cannot move a
+    # single stored score. It exists so the map has something smaller than the
+    # whole zone to draw.
+    localisation: list[SpatialCluster] = field(default_factory=list)
+
+    @property
+    def localised_area_km2(self) -> float | None:
+        if not self.localisation:
+            return None
+        return round(sum(c.area_km2 for c in self.localisation), 4)
+
+    @property
+    def geom_kind(self) -> str:
+        """Which shape this verdict can offer the map: a body-level plume, a
+        within-zone localisation, or nothing better than the zone outline."""
+        if self.spatial:
+            return "plume"
+        if self.localisation:
+            return "localised"
+        return "zone"
 
 
 @dataclass
@@ -294,7 +317,10 @@ def upsert_candidate(
     values: dict[str, dict[str, float | None]],
     rainfall_72h: float | None,
 ) -> None:
-    geom = union_geom(verdict.spatial)
+    # `spatial_geom` holds the best polygon available for this zone; `geom_kind`
+    # says which kind it is, so nothing downstream has to guess whether a shape
+    # is a measured plume or a fallback.
+    geom = union_geom(verdict.spatial) or union_geom(verdict.localisation)
     row: dict[str, Any] = {
         "water_body_id": wb.id,
         "zone_id": verdict.zone_id,
@@ -309,6 +335,9 @@ def upsert_candidate(
         "spatial_flag": bool(verdict.spatial),
         "spatial_geom": None if geom is None else from_shape(geom, srid=4326),
         "affected_area_km2": verdict.affected_area_km2,
+        "localisation": [c.to_dict() for c in verdict.localisation],
+        "localised_area_km2": verdict.localised_area_km2,
+        "geom_kind": verdict.geom_kind,
         "multivariate_score": verdict.multivariate.score,
         "multivariate_flag": verdict.multivariate.flagged,
         "multivariate": verdict.multivariate.to_dict(),
@@ -455,9 +484,11 @@ def detect_anomalies(
         # Spatial detector runs once per scene over the whole body.
         spatial_result = SpatialResult()
         spatial_ran = False
+        spatial_inputs = None
         if settings.spatial_enabled:
             inputs = _load_spatial_inputs(session, store, wb, scene, l6_run, zones)
             if inputs is not None:
+                spatial_inputs = inputs
                 rasters, water, zone_masks, transform, crs = inputs
                 spatial_result = spatial_detector(
                     rasters,
@@ -490,11 +521,12 @@ def detect_anomalies(
                 water_fraction_pct=wf,
                 rainfall_72h=ctx.mm_72h,
             )
+            zone_clusters = spatial_result.for_zone(zone.id)
             verdict = judge_zone(
                 zone.id,
                 values,
                 baselines,
-                spatial_result.for_zone(zone.id),
+                zone_clusters,
                 history,
                 current,
                 rainfall_72h=ctx.mm_72h,
@@ -502,6 +534,42 @@ def detect_anomalies(
                 rainfall_n=rain_n,
                 settings=settings,
             )
+            # The body-wide contrast is dominated by whichever zone is worst, so
+            # a zone that deviated from its *own* baseline often holds no
+            # body-level cluster and nothing but its outline could be drawn.
+            # Re-contrast the zone against itself to localise the deviation.
+            # Flagged zones only: unflagged ones have nothing to localise, and
+            # this is purely for display, so it never changes the verdict.
+            if (
+                not zone_clusters
+                and verdict.severity is not None
+                and spatial_inputs is not None
+                and settings.spatial_localise_zones
+            ):
+                rasters, _water, zone_masks, transform, crs = spatial_inputs
+                zmask = zone_masks.get(zone.id)
+                if zmask is not None:
+                    found = zone_localised_clusters(
+                        rasters,
+                        zmask,
+                        zone.id,
+                        transform,
+                        crs,
+                        # The indicators that actually deviated; falling back to
+                        # all of them when only the spatial/multivariate
+                        # detectors voted.
+                        indicators=verdict.temporal.anomalous_indicators or None,
+                        sigma_floors=settings.anomaly_sigma_floor,
+                        top_percent=settings.spatial_localise_top_percent,
+                        z_floor=settings.spatial_localise_z_floor,
+                        eps_px=settings.spatial_eps_px,
+                        min_samples=settings.spatial_min_samples,
+                        min_area_km2=settings.spatial_localise_min_area_km2,
+                        max_clusters=settings.spatial_localise_max_clusters,
+                        max_spread_px=settings.spatial_localise_max_spread_px,
+                    )
+                    if found:
+                        verdict = replace(verdict, localisation=found)
             upsert_candidate(
                 session, wb=wb, scene=scene, verdict=verdict, values=values, rainfall_72h=ctx.mm_72h
             )

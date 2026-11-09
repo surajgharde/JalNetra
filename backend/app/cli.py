@@ -5,6 +5,10 @@
         --resume
     python -m app.cli backfill-status --water-body wb_khadakwasla
     python -m app.cli ops-gauges
+    python -m app.cli simulate-anomaly --water-body wb_khadakwasla --zone z2 \
+        --severity high
+    python -m app.cli simulate-anomaly --list
+    python -m app.cli simulate-anomaly --purge
 
 ``backfill`` runs the whole chain in-process, one date chunk at a time -
 ingest -> mask -> indicators -> anomalies -> scoring -> alerts - and writes a
@@ -14,6 +18,13 @@ and window and carries on from the next chunk; nothing already done is redone
 because every stage is idempotent on (water body, scene). Rainfall for the
 window is pulled first; baselines are rebuilt once at the end. Alerts created
 by a backfill are never dispatched (history should not page anyone).
+
+``simulate-anomaly`` writes one demo anomaly and its alert without waiting for
+a satellite pass. Only the inputs are synthetic -- the deviation and the plume
+polygon -- and they go through the real detectors, scorer and assembler, so the
+severity and priority are production code's call, not this command's. Every row
+is stamped ``origin='simulation'``; the API does not expose that, so
+``--list``/``--purge`` are the way to find and remove them again.
 """
 
 from __future__ import annotations
@@ -238,6 +249,108 @@ def cmd_ops_gauges(_: argparse.Namespace) -> int:
 # --- entrypoint ------------------------------------------------------------------
 
 
+def _resolve_zone(session: Session, wb_id: str, zone_ref: str | None) -> Any:
+    """Accept a full zone id, a ``z<seq>`` short form, or nothing (first zone)."""
+    from app.db.models import Zone
+
+    zones = list(
+        session.scalars(select(Zone).where(Zone.water_body_id == wb_id).order_by(Zone.seq)).all()
+    )
+    if not zones:
+        raise SystemExit(f"water body {wb_id!r} has no zones; load the registry first")
+    if zone_ref is None:
+        return zones[0]
+    for z in zones:
+        if zone_ref in (z.id, f"z{z.seq}", str(z.seq)):
+            return z
+    known = ", ".join(f"z{z.seq}" for z in zones)
+    raise SystemExit(f"unknown zone {zone_ref!r} for {wb_id}; try one of: {known}")
+
+
+def cmd_simulate_anomaly(args: argparse.Namespace) -> int:
+    """Write (or list, or purge) simulated anomalies."""
+    from app.core.storage import get_store
+    from app.db.models import WaterBody
+    from app.services.ops.simulate import (
+        count_simulations,
+        list_simulated_alerts,
+        purge_simulations,
+        simulate_anomaly,
+    )
+
+    if args.purge:
+        with sync_session() as session:
+            before = count_simulations(session)
+            if not any(before.values()):
+                print("nothing to purge: no simulated rows")
+                return 0
+            removed = purge_simulations(session)
+            session.commit()
+        print("purged simulated rows:")
+        for table, n in removed.items():
+            print(f"  {table:<20} {n}")
+        return 0
+
+    if args.list:
+        with sync_session() as session:
+            counts = count_simulations(session)
+            alerts = list_simulated_alerts(session)
+            print("simulated rows:")
+            for table, n in counts.items():
+                print(f"  {table:<20} {n}")
+            if alerts:
+                print(f"\nsimulated alerts ({len(alerts)}):")
+                for a in alerts:
+                    print(
+                        f"  {a.id:<42} {a.severity:<6} "
+                        f"priority {a.priority_score:>5.1f}  {a.last_observed_at:%Y-%m-%d}  "
+                        f"{a.status}"
+                    )
+        return 0
+
+    if not args.water_body:
+        raise SystemExit("--water-body is required unless --list or --purge is given")
+
+    on = date.fromisoformat(args.date) if args.date else None
+    with sync_session() as session:
+        wb = session.get(WaterBody, args.water_body)
+        if wb is None:
+            raise SystemExit(f"unknown water body {args.water_body!r}")
+        zone = _resolve_zone(session, wb.id, args.zone)
+        result = simulate_anomaly(
+            session,
+            get_store(),
+            wb=wb,
+            zone=zone,
+            severity=args.severity,
+            observed_on=on,
+            indicator=args.indicator,
+            rainfall_72h=args.rainfall,
+        )
+        session.commit()
+
+    print(f"simulated anomaly on {result.water_body_id} / {zone.name}")
+    print(f"  scene        {result.scene_id}  (origin=simulation)")
+    print(f"  observed     {result.observed_on}")
+    print(f"  candidate    {result.candidate_id}  votes={result.votes}")
+    print(f"  severity     {result.severity}  (requested {result.requested_severity})")
+    if result.priority_score is not None:
+        print(f"  priority     {result.priority_score:.1f}  confidence {result.confidence}")
+    if result.area_km2 is not None:
+        print(f"  area         {result.area_km2} km2  ({result.geom_kind})")
+    print(f"  alert        {result.alert_id or '-- none raised --'}")
+    if not result.matched_request:
+        print(
+            f"  NOTE: the pipeline scored this {result.severity!r}, not "
+            f"{result.requested_severity!r}. The severity ladder is not overridden."
+        )
+    for note in result.notes:
+        print(f"  NOTE: {note}")
+    print("\nThese rows are indistinguishable from real ones in the API and UI.")
+    print("Remove them with:  python -m app.cli simulate-anomaly --purge")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="jalnetra", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -267,6 +380,42 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = sub.add_parser("ops-gauges", help="recompute and print the operational gauges")
     g.set_defaults(func=cmd_ops_gauges)
+
+    sa = sub.add_parser(
+        "simulate-anomaly",
+        help="write one demo anomaly + alert (stamped origin=simulation), or list/purge them",
+        description=(
+            "Only the inputs are synthetic: an indicator value placed N sigma off the "
+            "zone's own real baseline, plus a plume polygon inside the zone. The real "
+            "detectors, scorer and assembler then decide the severity and priority. "
+            "Every row written is stamped origin='simulation', which the API does not "
+            "expose -- so use --list and --purge to manage them."
+        ),
+    )
+    sa.add_argument("--water-body", help="e.g. wb_khadakwasla (required unless --list/--purge)")
+    sa.add_argument("--zone", help="zone id, or the short form z1/z2/... (default: first zone)")
+    sa.add_argument(
+        "--severity",
+        default="high",
+        choices=("low", "medium", "high"),
+        help="severity to aim for; the ladder still decides (default: high)",
+    )
+    sa.add_argument(
+        "--indicator",
+        default="ndti_turbidity",
+        choices=("ndti_turbidity", "ndci_chlorophyll", "fai_algal", "sediment_proxy"),
+        help="which indicator deviates (default: ndti_turbidity)",
+    )
+    sa.add_argument("--date", help="observation date YYYY-MM-DD (default: today)")
+    sa.add_argument(
+        "--rainfall",
+        type=float,
+        default=1.0,
+        help="mm in the preceding 72 h; raise it to exercise the natural-cause gate",
+    )
+    sa.add_argument("--list", action="store_true", help="list simulated rows and alerts")
+    sa.add_argument("--purge", action="store_true", help="delete every simulated row")
+    sa.set_defaults(func=cmd_simulate_anomaly)
     return p
 
 

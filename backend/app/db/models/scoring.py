@@ -73,6 +73,12 @@ class CandidateScore(Base):
     # {rainfall_72h_mm, rainfall_percentile, cloud_cover_pct, natural_cause_likely, gate_reason}
     context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
+    # "original" (real pipeline, real scene) or "simulation" (app.cli
+    # simulate-anomaly). Never exposed by the API; see migration 0016.
+    origin: Mapped[str] = mapped_column(
+        Text, nullable=False, default="original", server_default="original"
+    )
+
     scored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

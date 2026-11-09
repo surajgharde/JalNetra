@@ -10,8 +10,6 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
-from geoalchemy2.shape import to_shape
-from shapely.geometry import mapping
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,9 +25,13 @@ from app.schemas.alerts import (
     AlertStatusUpdate,
     GeoJSONFeatureCollection,
 )
-from app.services.l10_explain.explain import DISCLAIMER
 from app.services.l11_alerts.assembler import set_status
-from app.services.l11_alerts.payload import alert_list, alert_out, alerts_feature_collection
+from app.services.l11_alerts.payload import (
+    alert_geometry_feature,
+    alert_list,
+    alert_out,
+    alerts_feature_collection,
+)
 from app.services.l12_delivery.brief import generate_brief
 
 router = APIRouter(tags=["alerts"])
@@ -138,18 +140,8 @@ async def get_alert_geometry(
     alert_id: str, session: Annotated[AsyncSession, Depends(get_session)]
 ) -> dict[str, object]:
     """The flagged area (plume polygon, or the zone when no plume was drawn)."""
-    alert, _wb, _zone = await _load(session, alert_id)
-    return {
-        "type": "Feature",
-        "id": alert.id,
-        "geometry": mapping(to_shape(alert.geom)),
-        "properties": {
-            "alert_id": alert.id,
-            "affected_area_km2": alert.affected_area_km2,
-            "is_plume": alert.affected_area_km2 is not None,
-            "disclaimer": DISCLAIMER,
-        },
-    }
+    alert, _wb, zone = await _load(session, alert_id)
+    return alert_geometry_feature(alert, zone)
 
 
 def _brief_bytes(alert_id: str, force: bool) -> bytes:

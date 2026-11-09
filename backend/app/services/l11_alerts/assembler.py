@@ -148,8 +148,18 @@ def _apply_latest(
     alert.indicators = score.indicators
     alert.context = score.context
     alert.evidence = evidence
-    geom = to_shape(cand.spatial_geom) if cand.spatial_geom is not None else to_shape(zone.geom)
+    # `spatial_geom` is the best shape L8 found: a body-level plume, or a
+    # within-zone localisation when the body-wide contrast found no cluster in
+    # this zone. The zone outline is the last resort, and `geom_kind` records
+    # which it is so the map never presents a whole zone as a measured plume.
+    if cand.spatial_geom is not None:
+        geom = to_shape(cand.spatial_geom)
+        alert.geom_kind = cand.geom_kind
+    else:
+        geom = to_shape(zone.geom)
+        alert.geom_kind = "zone"
     alert.geom = from_shape(geom, srid=4326)
+    alert.localised_area_km2 = cand.localised_area_km2
     if score.priority_score > alert.peak_priority_score:
         alert.peak_priority_score = score.priority_score
     if severity_rank(score.severity) > severity_rank(alert.peak_severity):
@@ -221,6 +231,7 @@ def upsert_alert(
         last_observed_at=cand.observed_at,
         summary=score.summary,
         geom=from_shape(to_shape(zone.geom), srid=4326),
+        geom_kind="zone",
     )
     _apply_latest(alert, score, cand, zone, evidence)
     session.add(alert)

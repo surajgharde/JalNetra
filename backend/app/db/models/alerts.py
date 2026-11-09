@@ -78,10 +78,19 @@ class Alert(Base):
     evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     # [{observed_at, scene_id, candidate_id, priority_score, severity, confidence, alertable}]
     timeline: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    # Plume polygon of the latest observation, else the zone polygon.
+    # The flagged shape of the latest observation: a body-level plume, a
+    # within-zone localisation, or the zone polygon as a last resort.
     geom: Mapped[Any] = mapped_column(
         Geometry(geometry_type="MULTIPOLYGON", srid=4326, spatial_index=True), nullable=False
     )
+    # Which of those three `geom` is, so the map can say so rather than present
+    # a whole-zone outline as if it were a measured plume.
+    geom_kind: Mapped[str] = mapped_column(
+        Text, nullable=False, default="zone", server_default="zone"
+    )
+    # Area of a within-zone localisation; `affected_area_km2` stays the
+    # body-level plume area that scoring was computed from.
+    localised_area_km2: Mapped[float | None] = mapped_column(Float)
 
     brief_key: Mapped[str | None] = mapped_column(Text)  # briefs/{alert_id}.pdf
     brief_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -92,6 +101,13 @@ class Alert(Base):
     )
     status_changed_by: Mapped[str | None] = mapped_column(Text)
     status_note: Mapped[str | None] = mapped_column(Text)
+
+    # "original" (real pipeline, real scene) or "simulation" (app.cli
+    # simulate-anomaly). Never exposed by the API; see migration 0016.
+    origin: Mapped[str] = mapped_column(
+        Text, nullable=False, default="original", server_default="original"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

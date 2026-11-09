@@ -4,6 +4,7 @@
  */
 import { ApiError, buildUrl, request } from "./http";
 import type {
+  AlertFeature,
   AlertFeatureCollection,
   AlertFilters,
   AlertList,
@@ -71,6 +72,10 @@ export const api = {
       request<AlertOut>(`${V1}/alerts/${id}/status`, { method: "PATCH", body }),
     briefUrl: (id: string) => `${V1}/alerts/${id}/brief.pdf`,
     geometryUrl: (id: string) => `${V1}/alerts/${id}/geometry.geojson`,
+    // The flagged plume itself (or the zone, when no plume was drawn). The map
+    // draws this; `alerts.geojson` only carries the same shape for *active*
+    // alerts, so a validated/dismissed one has no other source for it.
+    geometry: (id: string) => request<AlertFeature>(`${V1}/alerts/${id}/geometry.geojson`),
   },
 
   validations: {

@@ -28,6 +28,7 @@ export const keys = {
   alerts: (f?: AlertFilters) => ["alerts", f ?? {}] as const,
   alertsGeo: (f?: AlertFilters) => ["alerts-geo", f ?? {}] as const,
   alert: (id: string) => ["alert", id] as const,
+  alertGeometry: (id: string) => ["alert-geometry", id] as const,
   validations: (alertId?: string) => ["validations", alertId ?? ""] as const,
   job: (id: string) => ["job", id] as const,
   jobs: ["jobs"] as const,
@@ -86,6 +87,16 @@ export const useAlertsGeo = (f: AlertFilters = {}) =>
 
 export const useAlert = (id: string | null) =>
   useQuery({ queryKey: keys.alert(id ?? ""), queryFn: () => api.alerts.get(id!), enabled: !!id });
+
+/** The alert's flagged plume polygon. Immutable for a given alert, so it never
+ * needs refetching while the map keeps it focused. */
+export const useAlertGeometry = (id: string | null) =>
+  useQuery({
+    queryKey: keys.alertGeometry(id ?? ""),
+    queryFn: () => api.alerts.geometry(id!),
+    enabled: !!id,
+    staleTime: Infinity,
+  });
 
 export const useValidations = (alertId?: string) =>
   useQuery({

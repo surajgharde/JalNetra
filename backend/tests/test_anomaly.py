@@ -13,7 +13,12 @@ from app.services.l07_baseline.service import BaselineWindow
 from app.services.l08_anomaly.gate import cap_severity, doy_percentile, rainfall_gate
 from app.services.l08_anomaly.multivariate import SceneFeatures, multivariate_detector
 from app.services.l08_anomaly.service import judge_zone, severity_from_votes
-from app.services.l08_anomaly.spatial import pixel_z, spatial_detector
+from app.services.l08_anomaly.spatial import (
+    pixel_z,
+    spatial_detector,
+    union_geom,
+    zone_localised_clusters,
+)
 from app.services.l08_anomaly.temporal import temporal_detector
 
 SETTINGS = Settings(rainfall_gate_min_history=5)
@@ -231,6 +236,141 @@ def test_spatial_skips_body_wide_shift() -> None:
         max_hot_pixels=200_000,
     )
     assert res.clusters == [] and "body-wide" in res.skipped["ndti_turbidity"]
+
+
+# --- spatial: within-zone localisation ------------------------------------------
+
+
+def _two_zone_scene() -> tuple[dict[str, np.ndarray], np.ndarray, dict[str, np.ndarray], Affine]:
+    """A body whose east zone holds a violent plume and whose west zone is
+    moderately but unmistakably elevated in one corner."""
+    rng = np.random.default_rng(7)
+    h = w = 160
+    water = np.ones((h, w), dtype=bool)
+    vals = rng.normal(0.10, 0.01, (h, w)).astype(np.float32)
+    vals[20:60, 100:140] += 0.30  # east: extreme plume
+    # West: a 2-sigma lift. Real data looks like this -- it deviates from the
+    # zone's own seasonal baseline (that is what the temporal detector flags on)
+    # but sits under the body-wide z > 3 bar the east plume is judged by.
+    vals[20:50, 20:50] += 0.02
+    zone_masks = {"west": np.zeros((h, w), bool), "east": np.zeros((h, w), bool)}
+    zone_masks["west"][:, :80] = True
+    zone_masks["east"][:, 80:] = True
+    return {"ndti_turbidity": vals}, water, zone_masks, Affine(
+        10.0, 0.0, 373000.0, 0.0, -10.0, 2050000.0
+    )
+
+
+def _localise(rasters, zone_mask, zone_id, transform, **kw):
+    args: dict = dict(
+        sigma_floors={"ndti_turbidity": 0.005},
+        top_percent=5.0,
+        z_floor=1.0,
+        eps_px=3.0,
+        min_samples=10,
+        min_area_km2=0.01,
+        max_clusters=3,
+        max_spread_px=40.0,
+    )
+    args.update(kw)
+    return zone_localised_clusters(
+        rasters, zone_mask, zone_id, transform, "EPSG:32643", **args
+    )
+
+
+def test_body_wide_pass_misses_the_milder_zone_and_localisation_recovers_it() -> None:
+    """The regression this exists for: the body-wide contrast is dominated by
+    whichever zone is worst, so a zone that deviated from its *own* baseline
+    gets no polygon and the alert falls back to the whole zone outline."""
+    rasters, water, zone_masks, transform = _two_zone_scene()
+    res = spatial_detector(
+        rasters,
+        water,
+        zone_masks,
+        transform,
+        "EPSG:32643",
+        sigma_floors={"ndti_turbidity": 0.005},
+        z_threshold=3.0,
+        eps_px=3.0,
+        min_samples=10,
+        min_area_km2=0.05,
+        max_hot_fraction=0.30,
+        max_hot_pixels=200_000,
+    )
+    # Body-wide: only the east plume clusters; west gets nothing to draw.
+    assert [c.zone_id for c in res.clusters] == ["east"]
+    assert res.for_zone("west") == []
+
+    # Re-contrasting west against itself finds its corner.
+    found = _localise(rasters, zone_masks["west"], "west", transform)
+    assert found, "localisation found nothing in the mildly elevated zone"
+    union = union_geom(found)
+    assert union is not None
+    # The patch sits in the lifted corner, not spread over the zone.
+    zone_px = int(zone_masks["west"].sum())
+    assert sum(c.area_km2 for c in found) < 0.08 * zone_px * 1e-4
+    assert all(c.zone_id == "west" and c.zone_pixel_share == 1.0 for c in found)
+
+
+def test_localisation_is_compact_not_just_small() -> None:
+    """The map fits the shape's bounding box, so two specks at opposite ends of
+    a zone zoom back out to the whole zone even though their area is tiny."""
+    rng = np.random.default_rng(3)
+    h = w = 160
+    vals = rng.normal(0.10, 0.005, (h, w)).astype(np.float32)
+    vals[10:30, 10:30] += 0.10  # one corner
+    vals[130:150, 130:150] += 0.09  # the far opposite corner
+    zone = np.ones((h, w), dtype=bool)
+    transform = Affine(10.0, 0.0, 373000.0, 0.0, -10.0, 2050000.0)
+    found = _localise({"ndti_turbidity": vals}, zone, "z", transform)
+    assert found
+    union = union_geom(found)
+    assert union is not None
+    minx, miny, maxx, maxy = union.bounds
+    # Both corners are ~170 px apart; only one group may survive, so the shape's
+    # bbox has to stay a small share of the 160 px (1.6 km) zone.
+    span_deg = max(maxx - minx, maxy - miny)
+    assert span_deg < 0.006, f"localised shape spans {span_deg} deg: not compact"
+
+
+def test_localisation_declines_on_a_uniform_zone() -> None:
+    """A zone with no internal structure must yield nothing, so the alert keeps
+    the honest "zone-wide" answer instead of a highlight invented from noise."""
+    rng = np.random.default_rng(11)
+    vals = rng.normal(0.10, 0.01, (120, 120)).astype(np.float32)
+    zone = np.ones((120, 120), dtype=bool)
+    found = _localise(
+        {"ndti_turbidity": vals},
+        zone,
+        "z",
+        Affine(10.0, 0.0, 373000.0, 0.0, -10.0, 2050000.0),
+        z_floor=3.0,  # nothing in pure noise clears this
+    )
+    assert found == []
+
+
+def test_localisation_picks_one_indicator_not_a_union_of_all() -> None:
+    """Different indicators peak in different places; unioning them widens the
+    shape straight back out."""
+    rng = np.random.default_rng(5)
+    h = w = 160
+    a = rng.normal(0.10, 0.005, (h, w)).astype(np.float32)
+    b = rng.normal(0.10, 0.005, (h, w)).astype(np.float32)
+    a[10:40, 10:40] += 0.20  # turbidity peaks top-left (bigger)
+    b[120:145, 120:145] += 0.15  # sediment peaks bottom-right
+    zone = np.ones((h, w), dtype=bool)
+    found = _localise(
+        {"ndti_turbidity": a, "sediment_proxy": b},
+        zone,
+        "z",
+        Affine(10.0, 0.0, 373000.0, 0.0, -10.0, 2050000.0),
+        sigma_floors={"ndti_turbidity": 0.005, "sediment_proxy": 0.005},
+        indicators=["ndti_turbidity", "sediment_proxy"],
+    )
+    assert found
+    assert {c.indicator for c in found} == {"ndti_turbidity"}, (
+        "localisation mixed indicators; the strongest anchor should win alone"
+    )
 
 
 # --- multivariate ---------------------------------------------------------------

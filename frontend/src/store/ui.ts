@@ -25,6 +25,11 @@ interface UiState {
   showAlerts: boolean;
   showZones: boolean;
   alertId: string | null;
+  /** Alert whose flagged plume the map should draw filled and zoom *to*.
+   * Separate from `alertId` (the slide-over): "Show on map" closes the sheet
+   * but the plume stays focused. Cleared by any manual body/date/zone change,
+   * because the plume belongs to one zone on one date. */
+  focusAlertId: string | null;
   /** Quick-look drawer opened from the wishlist, recent history or a map pin;
    * independent of `waterBodyId` so it never disturbs the main dashboard. */
   detailsWaterBodyId: string | null;
@@ -42,6 +47,12 @@ interface UiState {
   setShowAlerts: (v: boolean) => void;
   setShowZones: (v: boolean) => void;
   openAlert: (id: string | null) => void;
+  /** Focus one alert's plume on the map, selecting its body/date/zone in one
+   * commit so `selectWaterBody`'s date/zone reset cannot race it. Leaves
+   * `alertId` alone: the caller decides whether the slide-over opens or closes. */
+  focusAlert: (
+    a: { alertId: string; waterBodyId: string; date: string; zoneId: string } | null,
+  ) => void;
   openDetails: (id: string | null) => void;
   watchJob: (id: string | null) => void;
   setLive: (patch: Partial<UiState["live"]>) => void;
@@ -65,20 +76,32 @@ export const useUi = create<UiState>((set) => ({
   showAlerts: true,
   showZones: true,
   alertId: null,
+  focusAlertId: null,
   detailsWaterBodyId: null,
   jobId: null,
   live: { enabled: false, vis: "truecolor", composite: false, days: 30 },
   search: null,
 
-  selectWaterBody: (id) => set({ waterBodyId: id, date: null, zoneId: null }),
-  selectDate: (date) => set({ date }),
-  selectZone: (zoneId) => set({ zoneId }),
+  selectWaterBody: (id) => set({ waterBodyId: id, date: null, zoneId: null, focusAlertId: null }),
+  selectDate: (date) => set({ date, focusAlertId: null }),
+  selectZone: (zoneId) => set({ zoneId, focusAlertId: null }),
   selectIndicator: (indicator) => set({ indicator }),
   toggleLayer: (layer) =>
     set((s) => ({ layers: { ...s.layers, [layer]: !s.layers[layer] } })),
   setShowAlerts: (showAlerts) => set({ showAlerts }),
   setShowZones: (showZones) => set({ showZones }),
   openAlert: (alertId) => set({ alertId }),
+  focusAlert: (a) =>
+    set(
+      a === null
+        ? { focusAlertId: null }
+        : {
+            focusAlertId: a.alertId,
+            waterBodyId: a.waterBodyId,
+            date: a.date,
+            zoneId: a.zoneId,
+          },
+    ),
   openDetails: (detailsWaterBodyId) => set({ detailsWaterBodyId }),
   watchJob: (jobId) => set({ jobId }),
   setLive: (patch) => set((s) => ({ live: { ...s.live, ...patch } })),

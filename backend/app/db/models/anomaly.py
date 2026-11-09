@@ -70,6 +70,19 @@ class AnomalyCandidate(Base):
     )
     affected_area_km2: Mapped[float | None] = mapped_column(Float)
 
+    # --- localisation (display only, never votes) ---
+    # Where inside the zone the deviation sits, found by re-contrasting the zone
+    # against its own water when the body-wide pass found no cluster here. Same
+    # cluster dicts as `spatial`. `spatial_geom` carries whichever polygon was
+    # available and `geom_kind` says which: plume | localised | zone.
+    localisation: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    localised_area_km2: Mapped[float | None] = mapped_column(Float)
+    geom_kind: Mapped[str] = mapped_column(
+        Text, nullable=False, default="zone", server_default="zone"
+    )
+
     # --- detector 3: multivariate (IsolationForest on the zone's own history) ---
     multivariate_score: Mapped[float | None] = mapped_column(Float)  # higher = more unusual
     multivariate_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -86,6 +99,12 @@ class AnomalyCandidate(Base):
     baseline_status: Mapped[str] = mapped_column(Text, nullable=False)  # usable | building
     alertable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     suppressed_reason: Mapped[str | None] = mapped_column(Text)
+
+    # "original" (real pipeline, real scene) or "simulation" (app.cli
+    # simulate-anomaly). Never exposed by the API; see migration 0016.
+    origin: Mapped[str] = mapped_column(
+        Text, nullable=False, default="original", server_default="original"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

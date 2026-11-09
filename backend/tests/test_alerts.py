@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+from geoalchemy2.shape import from_shape
 from shapely.geometry import MultiPolygon, Polygon
 
 from app.core.config import Settings
@@ -19,6 +20,7 @@ from app.schemas.alerts import AlertOut
 from app.services.l10_explain.explain import DISCLAIMER
 from app.services.l11_alerts.assembler import _append_timeline, alert_id_for, slug
 from app.services.l11_alerts.evidence import tile_url
+from app.services.l11_alerts.payload import alert_geometry_feature
 from app.services.l12_delivery.brief import BriefData, ChipImage, render_pdf
 from app.services.l12_delivery.dispatch import render_email, sign
 
@@ -263,6 +265,56 @@ def test_timeline_append_dedupes_and_counts_alertable() -> None:
         _append_timeline(alert, e)  # type: ignore[arg-type]
     assert [e["candidate_id"] for e in alert.timeline] == [1, 2, 3]
     assert alert.n_observations == 2
+
+
+def test_alert_geometry_feature_distinguishes_a_plume_from_a_whole_zone() -> None:
+    """The map draws and captions the shape from this response alone, so it has
+    to say which of the three kinds it is. Conflating them is what made every
+    alert look lake-wide: a 0.11 km2 plume and a 2.5 km2 zone outline rendered
+    identically, and a zone is a quarter of the water body."""
+    plume = MultiPolygon([Polygon([(73.74, 18.42), (73.745, 18.42), (73.745, 18.424)])])
+    alert = SimpleNamespace(
+        id="alr_2026_0917_khadakwasla_z3",
+        geom=from_shape(plume, srid=4326),
+        affected_area_km2=0.11,
+        localised_area_km2=None,
+        geom_kind="plume",
+        severity="medium",
+        last_observed_at=T0,
+    )
+    zone = SimpleNamespace(name="South-western zone")
+    f = alert_geometry_feature(alert, zone)  # type: ignore[arg-type]
+    assert f["type"] == "Feature"
+    assert f["geometry"]["type"] == "MultiPolygon"  # type: ignore[index]
+    assert f["properties"] == {  # type: ignore[comparison-overlap]
+        "alert_id": "alr_2026_0917_khadakwasla_z3",
+        "geom_kind": "plume",
+        "is_plume": True,
+        "area_km2": 0.11,
+        "affected_area_km2": 0.11,
+        "severity": "medium",
+        "zone_name": "South-western zone",
+        "observed_on": "2026-09-17",
+        "disclaimer": DISCLAIMER,
+    }
+
+    # Localised: a patch found by re-contrasting the zone against itself. Still
+    # a real patch to zoom to, but its area is the localised one -- the
+    # body-level `affected_area_km2` stays None, since no body-level cluster was
+    # what the score was computed from.
+    alert.geom_kind = "localised"
+    alert.affected_area_km2 = None
+    alert.localised_area_km2 = 0.08
+    props = alert_geometry_feature(alert, zone)["properties"]  # type: ignore[arg-type,index]
+    assert props["is_plume"] is True  # type: ignore[index]
+    assert props["area_km2"] == 0.08 and props["affected_area_km2"] is None  # type: ignore[index]
+
+    # Zone-wide: the geometry IS the zone. `is_plume` must be False so the map
+    # labels and draws it as a zone rather than implying a measured plume.
+    alert.geom_kind = "zone"
+    alert.localised_area_km2 = None
+    props = alert_geometry_feature(alert, zone)["properties"]  # type: ignore[arg-type,index]
+    assert props["is_plume"] is False and props["area_km2"] is None  # type: ignore[index]
 
 
 def test_tile_url_encodes_chip_key() -> None:

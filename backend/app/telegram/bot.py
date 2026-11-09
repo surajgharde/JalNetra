@@ -16,7 +16,7 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AuthenticationError
 from telegram import (
     Bot,
     InlineKeyboardButton,
@@ -703,6 +703,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await message.chat.send_action(ChatAction.TYPING)
     try:
         reply, lake_cards = await ask_gpt(message.text)
+    except AuthenticationError:
+        # A rejected key never recovers on its own, so "try again in a moment" sends
+        # the operator looking for a network fault that isn't there. Name the cause.
+        log.error(
+            "OpenAI rejected OPENAI_API_KEY (401) — the key is revoked, deleted or from "
+            "another account; mint a new one at platform.openai.com/api-keys and restart",
+            extra={"chat_id": message.chat_id},
+        )
+        await message.reply_text(
+            "⚠️ My AI service is not configured correctly — the OpenAI API key was "
+            "rejected, so plain-language questions can't be answered until it's "
+            "replaced. The data commands still work: /device, /status <lake>, "
+            "/list, /alerts, /lakes, /nearby."
+        )
+        return
     except Exception:
         log.exception("gpt reply failed", extra={"chat_id": message.chat_id})
         await message.reply_text(

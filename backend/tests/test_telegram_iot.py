@@ -163,3 +163,31 @@ def test_reading_bands_are_ordered() -> None:
     assert _tds_reading(1500.0) == "very high — brackish"
     assert _signal_bar(-63) == "good"
     assert _signal_bar(-95) == "very weak"
+
+
+def test_telemetry_lines_tolerates_flat_scalar_firmware() -> None:
+    """/iot/live hands /iot/analyze whatever JSON the hardware answered, so a
+    firmware reporting bare scalars must not crash the prompt builder (it used to
+    raise AttributeError, surfacing as a 500 on the chatbot's /analyze)."""
+    from app.api.v1.iot import _telemetry_lines
+
+    flat = _telemetry_lines({"device": "buoy-01", "temperature": 27.5, "tds": 310, "turbidity": 12})
+    assert "Temperature: 27.5" in flat
+    assert "TDS: 310" in flat
+    assert "Turbidity: 12" in flat
+
+    nested = _telemetry_lines(
+        {
+            "device": "buoy-01",
+            "temperature": {"value": 27.5, "unit": "C"},
+            "tds": {"value": 310, "unit": "ppm"},
+            "turbidity": {"value": 12, "unit": "NTU"},
+            "wifi": {"rssi": -62},
+        }
+    )
+    assert "Temperature: 27.5 C" in nested
+    assert "Turbidity: 12 NTU" in nested
+    assert "-62 dBm" in nested
+
+    # A payload with nothing recognisable still renders rather than raising.
+    assert "unknown" in _telemetry_lines({})

@@ -16,6 +16,15 @@ shapely, reprojected to WGS84) attributed to the zone holding most of its pixels
 
 Body-wide shifts are not plumes: if more than ``max_hot_fraction`` of the
 water is hot, clustering is skipped and the temporal detector owns the call.
+
+``zone_localised_clusters`` is a *second* pass for the zones this one leaves
+empty. The body-wide contrast above is dominated by whichever zone is worst, so
+a zone whose own seasonal mean deviated can easily hold no body-level cluster --
+43% of temporal-only candidates here sat in a scene where the plume landed in a
+different zone. That pass re-runs the same contrast with the zone as its own
+reference population, which answers "where *inside this zone*" and gives the map
+a polygon to draw instead of the whole zone outline. It is localisation only: it
+never votes, so severity and scoring are untouched.
 """
 
 from __future__ import annotations
@@ -75,7 +84,12 @@ def pixel_area_km2(transform: Affine) -> float:
 
 
 def pixel_z(values: np.ndarray, water: np.ndarray, *, sigma_floor: float) -> np.ndarray:
-    """Within-scene robust z over water pixels; NaN elsewhere."""
+    """Within-scene robust z over ``water`` pixels; NaN elsewhere.
+
+    ``water`` is both the population the median/MAD are taken from and the set of
+    pixels that get a score, so passing a single zone's mask contrasts that zone
+    against itself rather than against the whole body.
+    """
     out = np.full(values.shape, np.nan, dtype=np.float32)
     sel = water & np.isfinite(values)
     if sel.sum() < 2:
@@ -134,6 +148,10 @@ def _polygonize(labels: np.ndarray, k: int, transform: Affine, crs: str) -> Base
     if isinstance(out, Polygon):
         out = MultiPolygon([out])
     return out
+
+
+def _px_dist(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.hypot(*(a - b)))
 
 
 def _majority_zone(mask: np.ndarray, zone_masks: dict[str, np.ndarray]) -> tuple[str | None, float]:
@@ -200,6 +218,116 @@ def spatial_detector(
                 )
             )
     return result
+
+
+def zone_localised_clusters(
+    rasters: dict[str, np.ndarray],
+    zone_mask: np.ndarray,
+    zone_id: str,
+    transform: Affine,
+    crs: str,
+    *,
+    indicators: list[str] | None = None,
+    sigma_floors: dict[str, float],
+    top_percent: float,
+    z_floor: float,
+    eps_px: float,
+    min_samples: int,
+    min_area_km2: float,
+    max_clusters: int,
+    max_spread_px: float,
+    default_floor: float = 0.01,
+) -> list[SpatialCluster]:
+    """Hot patches *inside one zone*, contrasted against that zone's own water.
+
+    For a zone the body-wide pass found nothing in. This asks a different
+    question from ``spatial_detector``: significance was already established by
+    the temporal detector against the seasonal baseline, so all that is left is
+    *where inside the zone the indicator is worst* -- a percentile question, not
+    a threshold one. A fixed z > 3 answers it badly: within a single zone that
+    is only ~0.2% of the pixels (a few dozen, well under any sane area floor),
+    so almost every zone came back empty and fell back to its own outline.
+
+    So: take the zone's hottest ``top_percent`` of water pixels, but never below
+    ``z_floor`` -- a genuinely uniform zone has a low percentile and correctly
+    yields nothing, leaving the honest "zone-wide" answer.
+
+    The result also has to be *compact*, not just small in area: the map fits the
+    shape's bounding box, so two specks at opposite ends of a zone zoom it right
+    back out to the whole zone. So the largest patch anchors the shape and only
+    patches within ``max_spread_px`` of it join, at most ``max_clusters`` of
+    them, from the single strongest indicator.
+    """
+    px_km2 = pixel_area_km2(transform)
+    keys = [k for k in (indicators or list(rasters)) if k in rasters]
+    per_indicator: list[tuple[float, list[SpatialCluster]]] = []
+    for key in keys:
+        z = pixel_z(rasters[key], zone_mask, sigma_floor=sigma_floors.get(key, default_floor))
+        finite = np.isfinite(z)
+        if int(finite.sum()) < min_samples:
+            continue
+        threshold = max(float(np.percentile(z[finite], 100.0 - top_percent)), z_floor)
+        labels, skip, _frac = cluster_hot_pixels(
+            z,
+            z_threshold=threshold,
+            eps_px=eps_px,
+            min_samples=min_samples,
+            # The percentile already caps the hot set at `top_percent`, so these
+            # two guards cannot bite; they stay in the signature of the shared
+            # helper, not in this pass's policy.
+            max_hot_fraction=1.0,
+            max_hot_pixels=int(np.iinfo(np.int32).max),
+        )
+        if skip:
+            continue
+        # Measure every cluster in pixel space first; polygonizing is the
+        # expensive part and most clusters get dropped below.
+        found: list[tuple[int, float, np.ndarray]] = []  # (label, area, centroid[row, col])
+        for k in range(1, int(labels.max()) + 1):
+            mask = labels == k
+            n = int(mask.sum())
+            if n * px_km2 < min_area_km2:
+                continue
+            rows, cols = np.nonzero(mask)
+            found.append((k, n * px_km2, np.array([rows.mean(), cols.mean()])))
+        if not found:
+            continue
+        found.sort(key=lambda t: t[1], reverse=True)
+        # The largest patch anchors the shape; smaller ones join it only if they
+        # are near it. Without this, two specks at opposite ends of the zone
+        # produced a bounding box spanning the whole zone -- the map fits that
+        # box, so the highlight was back to covering a third of the lake even
+        # though its area was tiny.
+        anchor = found[0]
+        kept = [t for t in found[: max_clusters * 4] if _px_dist(t[2], anchor[2]) <= max_spread_px]
+        kept = kept[:max_clusters]
+        clusters = []
+        for k, area, _c in kept:
+            mask = labels == k
+            zs = z[mask]
+            clusters.append(
+                SpatialCluster(
+                    indicator=key,
+                    zone_id=zone_id,
+                    n_pixels=int(mask.sum()),
+                    area_km2=area,
+                    mean_z=float(np.nanmean(zs)),
+                    max_z=float(np.nanmax(zs)),
+                    geom_4326=_polygonize(labels, k, transform, crs),
+                    # Clustered inside the zone mask, so every pixel is in it.
+                    zone_pixel_share=1.0,
+                )
+            )
+        if clusters:
+            per_indicator.append((anchor[1], clusters))
+    if not per_indicator:
+        return []
+    # One indicator's patches, not a union across indicators: different
+    # indicators peak in different places, and merging them widens the shape
+    # right back out. The strongest anchor wins; `indicator` on each cluster
+    # records which.
+    per_indicator.sort(key=lambda t: t[0], reverse=True)
+    return per_indicator[0][1]
 
 
 def union_geom(clusters: list[SpatialCluster]) -> MultiPolygon | None:

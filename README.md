@@ -137,7 +137,7 @@ backend/    FastAPI app + Celery workers (Python 3.11, uv)
   app/services/   one package per pipeline layer L2-L13 (+ registry, ops)
   app/workers/    Celery app, tasks, beat schedule, signals
   app/schemas/    Pydantic v2 response models (the API contract)
-  app/cli.py      resumable backfill, ops gauges
+  app/cli.py      resumable backfill, ops gauges, anomaly simulator
   tests/          unit tests (integration tests behind JALNETRA_INTEGRATION=1)
 frontend/   Vite + React 18 + TypeScript dashboard
 infra/      compose init SQL, Prometheus + Grafana provisioning
@@ -563,6 +563,37 @@ docker compose run --rm api python -m app.cli ops-gauges
 - **Sentry** — `SENTRY_DSN`; every task event tagged with body / scene / alert.
 - **Task limits** — soft/hard time limits so a hung range read frees its worker;
   with `acks_late` the task is redelivered.
+
+### Simulated anomalies (demo)
+
+Demos cannot wait for a satellite pass over a polluted lake, so one anomaly and
+its alert can be written on demand:
+
+```sh
+docker compose exec api python -m app.cli simulate-anomaly \
+    --water-body wb_khadakwasla --zone z2 --severity high
+docker compose exec api python -m app.cli simulate-anomaly --list
+docker compose exec api python -m app.cli simulate-anomaly --purge
+```
+
+Only the **inputs** are synthetic: an indicator value placed N sigma off the
+zone's own real seasonal baseline, and a plume polygon drawn inside the zone.
+Those run through the real detectors, the real scorer and the real assembler, so
+severity, priority, confidence, the four contributions and the summary are all
+production code's output on production thresholds — if the requested severity is
+not reachable the command says what came out instead rather than forcing it. The
+severity profiles are calibrated against the real alerts in this database (a
+real `high` averages 3.5 deviating indicators and a *smaller* plume than a
+`medium`, so breadth escalates the simulation, not blob size).
+
+Each run invents its own `Scene` (`sim_...`, `source='simulation'`) so it can
+never overwrite a real scene's candidates. Every row written — scene, candidate,
+score, alert — carries `origin='simulation'` (migration 0016).
+
+> **The API does not expose `origin`, so a simulated alert is indistinguishable
+> from a real one in the UI, the GeoJSON feed and the PDF brief.** That stamp in
+> the database is the only record. Use `--list` to see what is simulated and
+> `--purge` to remove all of it; neither can touch an `original` row.
 
 ## Development
 

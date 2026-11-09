@@ -183,3 +183,104 @@ def test_photo_upload_takes_only_a_path_parameter_and_a_file() -> None:
     assert params == {("validation_id", "path")}, params
     assert "max_bytes" not in {name for name, _ in params}
     assert list(op["requestBody"]["content"]) == ["multipart/form-data"]
+
+
+# --- tile colour ramps ----------------------------------------------------------
+
+
+def test_adaptive_stretch_rescues_a_layer_that_rendered_flat() -> None:
+    """The regression: a fixed ramp spans everything an index can physically be,
+    which is far wider than any one lake on any one day. Ambazari's sediment chip
+    sits in 0.038-0.056 inside a 0.0-0.3 ramp -- 6% of it -- so every water pixel
+    came out the same pale tan and the layer painted the whole body one colour."""
+    from app.api.tiles import LAYER_STYLES, stretch_from_stats
+
+    style = LAYER_STYLES["sediment_proxy"]
+    stats = {"min": 0.035, "max": 0.062, "percentile_2": 0.0384, "percentile_98": 0.0562}
+    out = stretch_from_stats(stats, style, noise_floor=0.005)
+    assert out is not None
+    lo, hi = out
+    fixed_span = style.rescale[1] - style.rescale[0]  # type: ignore[index]
+    assert (hi - lo) < fixed_span / 10, "stretch is barely narrower than the fixed ramp"
+    # The real data has to sit inside the stretched interval, not get clipped off.
+    assert lo <= stats["percentile_2"] and hi >= stats["percentile_98"]
+
+
+def test_stretch_refuses_to_invent_structure_in_a_uniform_lake() -> None:
+    """Percentile-stretching a genuinely uniform lake turns sensor noise into a
+    convincing gradient. Below a couple of noise units the layer must keep its
+    fixed ramp and render honestly flat."""
+    from app.api.tiles import LAYER_STYLES, stretch_from_stats
+
+    style = LAYER_STYLES["ndti_turbidity"]
+    floor = 0.02  # anomaly_sigma_floor for turbidity
+    noise = {"percentile_2": 0.100, "percentile_98": 0.100 + 0.9 * floor}
+    assert stretch_from_stats(noise, style, noise_floor=floor) is None
+
+    real = {"percentile_2": 0.100, "percentile_98": 0.100 + 5 * floor}
+    assert stretch_from_stats(real, style, noise_floor=floor) is not None
+
+
+def test_stretch_never_leaves_the_indicator_physical_range() -> None:
+    """The padding must not colour values no sensor can produce."""
+    from app.api.tiles import LAYER_STYLES, stretch_from_stats
+
+    style = LAYER_STYLES["ndci_chlorophyll"]
+    lo_f, hi_f = style.rescale  # type: ignore[misc]
+    stats = {"percentile_2": lo_f, "percentile_98": hi_f}
+    out = stretch_from_stats(stats, style, noise_floor=0.02)
+    assert out is not None and out[0] >= lo_f and out[1] <= hi_f
+
+
+def test_degenerate_statistics_keep_the_fixed_ramp() -> None:
+    from app.api.tiles import LAYER_STYLES, stretch_from_stats
+
+    style = LAYER_STYLES["fai_algal"]
+    for stats in (
+        {"percentile_2": 0.01, "percentile_98": 0.01},  # no spread at all
+        {"percentile_2": 0.05, "percentile_98": 0.01},  # inverted
+        {"percentile_2": 0.01},  # missing
+        {},
+    ):
+        assert stretch_from_stats(stats, style, noise_floor=None) is None
+
+
+def test_categorical_and_rgb_layers_are_never_stretched() -> None:
+    """The water mask is a value->colour lookup and true colour is RGB; neither
+    has a ramp, and stretching them would corrupt the rendering."""
+    import asyncio
+
+    from app.api.tiles import adaptive_rescale
+    from app.core.config import Settings
+
+    settings = Settings(tile_adaptive_rescale=True)
+    for chip in (
+        "chips/wb_x/2026-10-19/body/watermask.tif",
+        "chips/wb_x/2026-10-19/body/truecolor.tif",
+    ):
+        assert asyncio.run(adaptive_rescale(chip, settings)) is None
+
+
+def test_the_stretch_can_be_switched_off() -> None:
+    import asyncio
+
+    from app.api.tiles import adaptive_rescale
+    from app.core.config import Settings
+
+    off = Settings(tile_adaptive_rescale=False)
+    chip = "chips/wb_x/2026-10-19/body/ndti_turbidity.tif"
+    assert asyncio.run(adaptive_rescale(chip, off)) is None
+
+
+def test_titiler_params_prefers_the_given_rescale_over_the_fixed_one() -> None:
+    from app.api.tiles import titiler_params
+    from app.core.config import Settings
+
+    settings = Settings()
+    chip = "chips/wb_x/2026-10-19/body/sediment_proxy.tif"
+    fixed = titiler_params(chip, settings)
+    assert fixed["rescale"] == "0.0,0.3"
+    adapted = titiler_params(chip, settings, rescale=(0.038, 0.057))
+    assert adapted["rescale"] == "0.038,0.057"
+    # Everything else about the style is untouched.
+    assert adapted["colormap_name"] == fixed["colormap_name"] == "oranges"

@@ -48,9 +48,7 @@ function StatusActions({ alert }: { alert: AlertOut }) {
 }
 
 function Body({ alert }: { alert: AlertOut }) {
-  const selectWaterBody = useUi((s) => s.selectWaterBody);
-  const selectDate = useUi((s) => s.selectDate);
-  const selectZone = useUi((s) => s.selectZone);
+  const focusAlert = useUi((s) => s.focusAlert);
   const openAlert = useUi((s) => s.openAlert);
   const ctx = alert.context;
 
@@ -60,10 +58,18 @@ function Body({ alert }: { alert: AlertOut }) {
   // out to leave the button unresponsive (Radix Dialog's own close/focus
   // handling on this same click apparently swallowed the programmatic
   // navigation before React Router could act on it).
-  function selectOnMap() {
-    selectWaterBody(alert.water_body.id);
-    selectDate(alert.observed_on);
-    selectZone(alert.zone.id);
+  //
+  // focusAlert (not selectWaterBody + selectZone) so the map draws and zooms
+  // to *this alert's plume*. Selecting the body alone only fitted the whole
+  // lake and tinted the entire zone, which read as the whole water body being
+  // flagged rather than the ~1 km area that actually was.
+  function showOnMap(observedOn: string) {
+    focusAlert({
+      alertId: alert.alert_id,
+      waterBodyId: alert.water_body.id,
+      date: observedOn,
+      zoneId: alert.zone.id,
+    });
     openAlert(null);
   }
 
@@ -160,12 +166,7 @@ function Body({ alert }: { alert: AlertOut }) {
                 <Link
                   className="ml-auto text-primary hover:underline"
                   to="/"
-                  onClick={() => {
-                    selectWaterBody(alert.water_body.id);
-                    selectDate(t.observed_at.slice(0, 10));
-                    selectZone(alert.zone.id);
-                    openAlert(null);
-                  }}
+                  onClick={() => showOnMap(t.observed_at.slice(0, 10))}
                 >
                   view scene
                 </Link>
@@ -181,7 +182,7 @@ function Body({ alert }: { alert: AlertOut }) {
               </a>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link to="/" onClick={selectOnMap}>
+              <Link to="/" onClick={() => showOnMap(alert.observed_on)}>
                 <MapPin className="h-3.5 w-3.5" /> Show on map
               </Link>
             </Button>

@@ -129,6 +129,13 @@ def feature_properties(alert: Alert, wb: WaterBody, zone: Zone) -> dict[str, Any
         "status": alert.status,
         "natural_cause_likely": alert.natural_cause_likely,
         "affected_area_km2": alert.affected_area_km2,
+        # plume: body-level cluster. localised: hottest patch inside the zone.
+        # zone: deviation is zone-wide and the geometry IS the zone outline.
+        "geom_kind": alert.geom_kind,
+        # Area the drawn shape covers, whichever kind it is (None for `zone`).
+        "area_km2": (
+            alert.affected_area_km2 if alert.geom_kind == "plume" else alert.localised_area_km2
+        ),
         "n_observations": alert.n_observations,
         "summary": alert.summary,
         "disclaimer": DISCLAIMER,
@@ -141,6 +148,40 @@ def alert_feature(alert: Alert, wb: WaterBody, zone: Zone) -> GeoJSONFeature:
         geometry=mapping(to_shape(alert.geom)),
         properties=feature_properties(alert, wb, zone),
     )
+
+
+def alert_geometry_feature(alert: Alert, zone: Zone) -> dict[str, Any]:
+    """The one alert's flagged area, as served by ``/alerts/{id}/geometry.geojson``.
+
+    ``severity``/``zone_name``/``observed_on`` ride along so the map can style
+    and caption the highlight from this single response: an alert that has been
+    validated or dismissed is no longer in ``alerts.geojson`` at all, so this is
+    the only source for its plume.
+    """
+    return {
+        "type": "Feature",
+        "id": alert.id,
+        "geometry": mapping(to_shape(alert.geom)),
+        "properties": {
+            "alert_id": alert.id,
+            # plume: body-level cluster. localised: patch found by re-contrasting
+            # this zone against itself. zone: the deviation is zone-wide and the
+            # geometry IS the zone -- the map must say so, not imply a plume.
+            "geom_kind": alert.geom_kind,
+            "is_plume": alert.geom_kind in ("plume", "localised"),
+            # The area the shape actually covers, whichever kind it is.
+            "area_km2": (
+                alert.affected_area_km2
+                if alert.geom_kind == "plume"
+                else alert.localised_area_km2
+            ),
+            "affected_area_km2": alert.affected_area_km2,
+            "severity": alert.severity,
+            "zone_name": zone.name,
+            "observed_on": alert.last_observed_at.date().isoformat(),
+            "disclaimer": DISCLAIMER,
+        },
+    }
 
 
 def alerts_feature_collection(
